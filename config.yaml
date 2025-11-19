@@ -1,0 +1,26 @@
+general:
+  path: "/data"
+  output: "map.json"
+  format: "json"
+  threads: 8
+
+algorithm:
+  name: "blake3"
+  xof_length: 128
+
+memory:
+  mode: "booster"
+  max_ram: 17179869184 # 16 GiB
+  booster_max_file_size: 536870912 # 512 MiB
+  booster_batch_size: 8
+  per_thread_buffer_bytes: 8388608 # 8 MiB
+  booster_prealloc_bytes: 8589934592 # 8 GiB
+  booster_prefetch_count: 4
+  memory_pressure_check_interval_ms: 500
+
+report:
+  format: "json"
+  include:
+    - "duplicates"
+    - "stats"
+    - "slowest_files"
