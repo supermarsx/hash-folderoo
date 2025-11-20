@@ -1,17 +1,25 @@
-use clap::{Arg, Command};
-use env_logger;
-use log::{info, warn};
 use std::fs::File;
 use std::io::{BufReader, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
-use hash_folderoo::algorithms::Algorithm;
-use hash_folderoo::HasherImpl;
-use hash_folderoo::RuntimeConfig;
+use clap::Parser;
+use log::{info, warn};
 use serde::Serialize;
 use walkdir::WalkDir;
 use globset::{Glob, GlobSetBuilder};
 use chrono::Utc;
+
+use hash_folderoo::algorithms::Algorithm;
+use hash_folderoo::HasherImpl;
+use hash_folderoo::RuntimeConfig;
+use hash_folderoo::cli::Cli;
+use hash_folderoo::utils::setup_logging;
+use hash_folderoo::pipeline::Pipeline;
+use hash_folderoo::memory::{MemoryMode, recommend_config};
+use hash_folderoo::io;
+use hash_folderoo::compare as compare_mod;
+use hash_folderoo::copy;
 
 #[derive(Serialize)]
 struct MapHeader {
@@ -28,7 +36,7 @@ struct AlgorithmMeta {
     params: Option<serde_json::Value>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct MapEntry {
     path: String,
     hash: String,
@@ -55,166 +63,346 @@ fn build_exclude_set(patterns: &[String]) -> anyhow::Result<Option<globset::Glob
 }
 
 fn main() -> anyhow::Result<()> {
-    env_logger::init();
+    setup_logging();
 
-    let matches = Command::new("hash-folderoo")
-        .version("0.1.0")
-        .about("Hash-based folder toolkit (prototype)")
-        .subcommand_required(false)
-        .subcommand(
-            Command::new("hashmap")
-                .about("Create a hashmap of files in a directory")
-                .arg(Arg::new("path").short('p').long("path").required(true))
-                .arg(Arg::new("output").short('o').long("output"))
-                .arg(Arg::new("alg").long("alg").default_value("blake3"))
-                .arg(Arg::new("xof-length").long("xof-length"))
-                .arg(Arg::new("strip-prefix").long("strip-prefix").num_args(1))
-                .arg(Arg::new("exclude").long("exclude").num_args(1..))
-                .arg(Arg::new("config").long("config").num_args(1)),
-        )
-        .get_matches();
+    let cli = Cli::parse();
 
-        if let Some(sub) = matches.subcommand_matches("hashmap") {
-        // Start with empty runtime config; if --config provided we will load and merge
-        let mut runtime_cfg = RuntimeConfig::default();
-        if let Some(cfg_path) = sub.get_one::<String>("config") {
-            match RuntimeConfig::load_from_file(cfg_path) {
-                Ok(c) => runtime_cfg.merge(c),
-                Err(e) => warn!("Failed loading config {}: {}", cfg_path, e),
-            }
-        }
+    match &cli.command {
+        Some(hash_folderoo::cli::Commands::Hashmap(args)) => {
+            // Start with empty runtime config; if --config provided we will load and merge
+            let mut runtime_cfg = RuntimeConfig::default();
+            // Note: Phase 1 CLI doesn't include all previous flags (e.g. strip-prefix, xof-length).
+            // Where applicable the runtime config can still provide defaults.
 
-        // CLI args override config
-        let path = match sub.get_one::<String>("path") {
-            Some(p) => p.clone(),
-            None => runtime_cfg
-                .general
+            // CLI args override config
+            let path = match &args.path {
+                Some(p) => p.clone().to_string_lossy().into_owned(),
+                None => runtime_cfg
+                    .general
+                    .as_ref()
+                    .and_then(|g| g.path.clone())
+                    .expect("path is required either via CLI or config"),
+            };
+
+            let output = args
+                .output
                 .as_ref()
-                .and_then(|g| g.path.clone())
-                .expect("path is required either via CLI or config"),
-        };
+                .map(|p| p.as_path().to_string_lossy().into_owned())
+                .or_else(|| runtime_cfg.general.as_ref().and_then(|g| g.output.clone()));
 
-        let output = sub
-            .get_one::<String>("output")
-            .map(|s| s.as_str())
-            .or_else(|| runtime_cfg.general.as_ref().and_then(|g| g.output.as_deref()));
+            let alg = args
+                .algorithm
+                .as_deref()
+                .or_else(|| runtime_cfg.algorithm.as_ref().and_then(|a| a.name.as_deref()))
+                .unwrap_or("blake3");
 
-        let alg = sub
-            .get_one::<String>("alg")
-            .map(|s| s.as_str())
-            .or_else(|| runtime_cfg.algorithm.as_ref().and_then(|a| a.name.as_deref()))
-            .unwrap_or("blake3");
+            let xof_len = runtime_cfg.algorithm.as_ref().and_then(|a| a.xof_length);
 
-        let xof_len = sub
-            .get_one::<String>("xof-length")
-            .and_then(|s| s.parse::<usize>().ok())
-            .or_else(|| runtime_cfg.algorithm.as_ref().and_then(|a| a.xof_length));
+            // strip-prefix not exposed in Phase 1 CLI; leave as None
+            let strip_prefix: Option<String> = None;
 
-        let strip_prefix = sub
-            .get_one::<String>("strip-prefix")
-            .map(|s| s.clone())
-            .or_else(|| runtime_cfg.general.as_ref().and_then(|g| g.path.clone()));
+            let excludes: Vec<String> = if !args.exclude.is_empty() {
+                args.exclude.clone()
+            } else {
+                runtime_cfg
+                    .general
+                    .as_ref()
+                    .and_then(|g| None)
+                    .unwrap_or_default()
+            };
 
-        let excludes: Vec<String> = if sub.contains_id("exclude") {
-            sub.get_many::<String>("exclude").unwrap().map(|s| s.to_string()).collect()
-        } else {
-            runtime_cfg
-                .general
-                .as_ref()
-                .and_then(|g| None)
-                .unwrap_or_default()
-        };
-
-        info!("Computing hashmap for {} using alg {}", path, alg);
-
-        let alg_enum = match Algorithm::from_str(alg) {
-            Some(a) => a,
-            None => {
-                warn!("Unknown algorithm {}, falling back to blake3", alg);
-                Algorithm::Blake3
+            if !args.silent {
+                info!("Computing hashmap for {} using alg {}", path, alg);
             }
-        };
 
-        let mut probe = alg_enum.create();
-        let default_out = probe.info().output_len_default;
-        let out_len = xof_len.unwrap_or(default_out);
+            let alg_enum = match Algorithm::from_str(alg) {
+                Some(a) => a,
+                None => {
+                    warn!("Unknown algorithm {}, falling back to blake3", alg);
+                    Algorithm::Blake3
+                }
+            };
 
-        let exclude_set = build_exclude_set(&excludes)?;
+            // Probe to determine default out length
+            let mut probe = alg_enum.create();
+            let default_out = probe.info().output_len_default;
+            let out_len = xof_len.unwrap_or(default_out);
 
-        let header = MapHeader {
-            version: 1,
-            generated_by: "hash-folderoo",
-            timestamp: Utc::now().to_rfc3339(),
-            root: path.to_string(),
-            algorithm: AlgorithmMeta {
-                name: probe.info().name,
-                params: None,
-            },
-        };
+            let exclude_set = build_exclude_set(&excludes)?;
 
+            // Determine memory mode from CLI (defaults to Balanced)
+            let mem_mode_str = args.mem_mode.as_deref().unwrap_or("balanced");
+            let mode = MemoryMode::from_str(mem_mode_str);
 
-        // Prepare output writer
-        let mut writer: Box<dyn Write> = match output {
-            Some(p) => Box::new(File::create(p)?),
-            None => Box::new(std::io::stdout()),
-        };
+            // Create pipeline with chosen memory mode
+            let pipeline = Pipeline::new(mode);
 
-        // Write header and open entries array
-        write!(writer, "{{\n")?;
-        write!(writer, "  \"version\": {},\n", header.version)?;
-        write!(writer, "  \"generated_by\": \"{}\",\n", header.generated_by)?;
-        write!(writer, "  \"timestamp\": \"{}\",\n", header.timestamp)?;
-        write!(writer, "  \"root\": \"{}\",\n", header.root)?;
-        write!(writer, "  \"algorithm\": {{ \"name\": \"{}\" }},\n", header.algorithm.name)?;
-        write!(writer, "  \"entries\": [\n")?;
+            // Shared vector to collect results from workers
+            let entries: Arc<Mutex<Vec<MapEntry>>> = Arc::new(Mutex::new(Vec::new()));
 
-        let mut first = true;
+            // Worker closure: hash a single file and push MapEntry into shared vector
+            let alg_for_worker = alg_enum;
+            let entries_clone = entries.clone();
+            let strip_prefix_clone = strip_prefix.clone();
+            let exclude_set_clone = exclude_set.clone();
+            let out_len_inner = out_len;
 
-        for entry in WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
-            if entry.file_type().is_file() {
-                let p = entry.path().to_path_buf();
-                let rel = if let Some(strip) = &strip_prefix {
-                    match p.strip_prefix(strip) {
-                        Ok(s) => s.to_string_lossy().into_owned(),
-                        Err(_) => p.to_string_lossy().into_owned(),
-                    }
-                } else {
-                    p.to_string_lossy().into_owned()
-                };
-
-                // Apply excludes
-                if let Some(gs) = &exclude_set {
-                    if gs.is_match(&p) {
-                        info!("Excluding {}", p.display());
-                        continue;
+            let worker = move |path_buf: PathBuf, _pool: Arc<hash_folderoo::memory::BufferPool>| -> anyhow::Result<()> {
+                // Apply excludes (path-based) if set; note: pipeline already walks with exclusions but double-check
+                if let Some(gs) = &exclude_set_clone {
+                    if gs.is_match(&path_buf) {
+                        return Ok(());
                     }
                 }
 
-                let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
-                let mut hasher = alg_enum.create();
-                match hash_file(hasher.as_mut(), &p, out_len) {
+                // Only process files
+                if !path_buf.is_file() {
+                    return Ok(());
+                }
+
+                let rel = if let Some(strip) = &strip_prefix_clone {
+                    match path_buf.strip_prefix(strip) {
+                        Ok(s) => s.to_string_lossy().into_owned(),
+                        Err(_) => path_buf.to_string_lossy().into_owned(),
+                    }
+                } else {
+                    path_buf.to_string_lossy().into_owned()
+                };
+
+                let size = path_buf.metadata().map(|m| m.len()).unwrap_or(0);
+                let mut hasher = alg_for_worker.create();
+                match hash_file(hasher.as_mut(), &path_buf, out_len_inner) {
                     Ok(h) => {
-                        if !first {
-                            write!(writer, ",\n")?;
-                        }
-                        first = false;
                         let me = MapEntry {
                             path: rel,
                             hash: h,
                             size,
                         };
-                        let s = serde_json::to_string(&me)?;
-                        write!(writer, "    {}", s)?;
+                        let mut guard = entries_clone.lock().unwrap();
+                        guard.push(me);
                     }
-                    Err(e) => warn!("Failed hashing {}: {}", p.display(), e),
+                    Err(e) => {
+                        warn!("Failed hashing {}: {}", path_buf.display(), e);
+                    }
+                }
+                Ok(())
+            };
+
+            // Run the pipeline
+            let processed = pipeline
+                .run(&path, &excludes, worker)
+                .map_err(|e| anyhow::anyhow!("pipeline error: {}", e))?;
+
+            if !args.silent {
+                info!("Processed {} files", processed);
+            }
+
+            // Build header + entries for output
+            let header = MapHeader {
+                version: 1,
+                generated_by: "hash-folderoo",
+                timestamp: Utc::now().to_rfc3339(),
+                root: path.clone(),
+                algorithm: AlgorithmMeta {
+                    name: probe.info().name,
+                    params: None,
+                },
+            };
+
+            let mut entries_vec = entries.lock().unwrap().clone();
+
+            // Sort entries by path for deterministic output
+            entries_vec.sort_by(|a, b| a.path.cmp(&b.path));
+
+            // Handle output format: json (default) or csv
+            let format = args.format.as_deref().unwrap_or("json").to_lowercase();
+
+            match (output, format.as_str()) {
+                (Some(p), "json") => {
+                    // create combined object
+                    #[derive(Serialize)]
+                    struct Out<'a> {
+                        version: u8,
+                        generated_by: &'static str,
+                        timestamp: String,
+                        root: String,
+                        algorithm: &'a AlgorithmMeta,
+                        entries: &'a [MapEntry],
+                    }
+
+                    let out = Out {
+                        version: header.version,
+                        generated_by: header.generated_by,
+                        timestamp: header.timestamp.clone(),
+                        root: header.root.clone(),
+                        algorithm: &header.algorithm,
+                        entries: &entries_vec,
+                    };
+                    io::write_json(Path::new(&p), &out).map_err(|e| anyhow::anyhow!(e))?;
+                }
+                (Some(p), "csv") => {
+                    io::write_csv(Path::new(&p), &entries_vec).map_err(|e| anyhow::anyhow!(e))?;
+                }
+                (Some(p), other) => {
+                    warn!("Unknown format {}, falling back to json", other);
+                    #[derive(Serialize)]
+                    struct Out<'a> {
+                        version: u8,
+                        generated_by: &'static str,
+                        timestamp: String,
+                        root: String,
+                        algorithm: &'a AlgorithmMeta,
+                        entries: &'a [MapEntry],
+                    }
+                    let out = Out {
+                        version: header.version,
+                        generated_by: header.generated_by,
+                        timestamp: header.timestamp.clone(),
+                        root: header.root.clone(),
+                        algorithm: &header.algorithm,
+                        entries: &entries_vec,
+                    };
+                    io::write_json(Path::new(&p), &out).map_err(|e| anyhow::anyhow!(e))?;
+                }
+                (None, "json") => {
+                    let mut stdout = std::io::stdout();
+                    let mut s = serde_json::to_vec_pretty(&serde_json::json!({
+                        "version": header.version,
+                        "generated_by": header.generated_by,
+                        "timestamp": header.timestamp,
+                        "root": header.root,
+                        "algorithm": { "name": header.algorithm.name },
+                        "entries": entries_vec,
+                    }))?;
+                    stdout.write_all(&s)?;
+                }
+                (None, "csv") => {
+                    let mut wtr = csv::Writer::from_writer(std::io::stdout());
+                    for rec in &entries_vec {
+                        wtr.serialize(rec)?;
+                    }
+                    wtr.flush()?;
+                }
+                (None, other) => {
+                    warn!("Unknown format {}, falling back to json", other);
+                    let mut stdout = std::io::stdout();
+                    let mut s = serde_json::to_vec_pretty(&serde_json::json!({
+                        "version": header.version,
+                        "generated_by": header.generated_by,
+                        "timestamp": header.timestamp,
+                        "root": header.root,
+                        "algorithm": { "name": header.algorithm.name },
+                        "entries": entries_vec,
+                    }))?;
+                    stdout.write_all(&s)?;
                 }
             }
         }
+        Some(hash_folderoo::cli::Commands::Compare(args)) => {
+            let source = args.source.as_ref()
+                .map(|p| p.to_string_lossy().into_owned())
+                .ok_or_else(|| anyhow::anyhow!("--source is required"))?;
+            let target = args.target.as_ref()
+                .map(|p| p.to_string_lossy().into_owned())
+                .ok_or_else(|| anyhow::anyhow!("--target is required"))?;
 
-        // Close entries and object
-        write!(writer, "\n  ]\n}}\n")?;
-    } else {
-        println!("Run with --help for usage");
+            if !args.format.as_deref().unwrap_or("json").is_empty() {
+                // noop; format will be used below
+            }
+
+            if !args.output.is_none() {
+                // noop; output will be used below
+            }
+
+            let src_map = compare_mod::get_map_from_input(&source).map_err(|e| anyhow::anyhow!(e))?;
+            let tgt_map = compare_mod::get_map_from_input(&target).map_err(|e| anyhow::anyhow!(e))?;
+
+            let report = compare_mod::compare_maps(src_map, tgt_map);
+
+            let format = args.format.as_deref().unwrap_or("json");
+            let out_path = args.output.as_ref().map(|p| p.as_path());
+
+            compare_mod::write_report(&report, out_path, format).map_err(|e| anyhow::anyhow!(e))?;
+        }
+        Some(hash_folderoo::cli::Commands::Copydiff(args)) => {
+            // Load plan from file if provided, otherwise generate by running a comparison
+            let plan = if let Some(p) = &args.plan {
+                // load JSON plan
+                let f = File::open(p).map_err(|e| anyhow::anyhow!("failed opening plan {:?}: {}", p, e))?;
+                let reader = BufReader::new(f);
+                let plan: copy::CopyPlan = serde_json::from_reader(reader).map_err(|e| anyhow::anyhow!("failed parsing plan {:?}: {}", p, e))?;
+                plan
+            } else {
+                // require source and target to generate comparison-based plan
+                let source = args.source.as_ref().map(|p| p.to_string_lossy().into_owned())
+                    .ok_or_else(|| anyhow::anyhow!("--source is required when --plan is not provided"))?;
+                let target = args.target.as_ref().map(|p| p.to_string_lossy().into_owned())
+                    .ok_or_else(|| anyhow::anyhow!("--target is required when --plan is not provided"))?;
+
+                let src_map = compare_mod::get_map_from_input(&source).map_err(|e| anyhow::anyhow!(e))?;
+                let tgt_map = compare_mod::get_map_from_input(&target).map_err(|e| anyhow::anyhow!(e))?;
+                let report = compare_mod::compare_maps(src_map, tgt_map);
+
+                // If the provided source/target are directories, pass them as roots to help construct dst paths
+                let source_root = args.source.as_ref().and_then(|p| {
+                    if p.exists() && p.is_dir() { Some(p.as_path()) } else { None }
+                });
+                let target_root = args.target.as_ref().and_then(|p| {
+                    if p.exists() && p.is_dir() { Some(p.as_path()) } else { None }
+                });
+
+                copy::generate_copy_plan(&report, source_root, target_root)
+            };
+
+            if args.execute {
+                copy::execute_copy_plan(&plan).map_err(|e| anyhow::anyhow!(e))?;
+            } else {
+                // default to dry-run output
+                copy::dry_run_copy_plan(&plan);
+            }
+        }
+        Some(hash_folderoo::cli::Commands::Removempty(args)) => {
+            let path = args.path.as_ref()
+                .map(|p| p.to_string_lossy().into_owned())
+                .ok_or_else(|| anyhow::anyhow!("--path is required"))?;
+            hash_folderoo::remove_empty_directories(std::path::Path::new(&path), args.dry_run)
+                .map_err(|e| anyhow::anyhow!("removempty error: {}", e))?;
+        }
+        Some(hash_folderoo::cli::Commands::Renamer(args)) => {
+            let path = args.path.as_ref()
+                .map(|p| p.to_string_lossy().into_owned())
+                .ok_or_else(|| anyhow::anyhow!("--path is required"))?;
+            let pattern = args.pattern.as_ref()
+                .map(|s| s.as_str())
+                .ok_or_else(|| anyhow::anyhow!("--pattern is required"))?;
+            hash_folderoo::rename_files(std::path::Path::new(&path), pattern, args.dry_run)
+                .map_err(|e| anyhow::anyhow!("renamer error: {}", e))?;
+        }
+        Some(hash_folderoo::cli::Commands::Benchmark(args)) => {
+            let alg = args.algorithm.as_deref().unwrap_or("blake3");
+            // CLI `size` is in bytes; convert to MB for run_benchmark which accepts size_mb.
+            let size_bytes = args.size.unwrap_or(0);
+            let size_mb = if size_bytes == 0 {
+                0
+            } else {
+                // round up to nearest MB
+                (size_bytes + (1024 * 1024) - 1) / (1024 * 1024)
+            };
+            hash_folderoo::run_benchmark(alg, size_mb).map_err(|e| anyhow::anyhow!(e))?;
+        }
+        Some(hash_folderoo::cli::Commands::Report(args)) => {
+            let input = args.input.as_ref()
+                .map(|p| p.to_string_lossy().into_owned())
+                .ok_or_else(|| anyhow::anyhow!("--input is required"))?;
+            let format = args.format.as_deref().unwrap_or("text");
+            hash_folderoo::generate_report(&input, format).map_err(|e| anyhow::anyhow!(e))?;
+        }
+        Some(_) => {
+            println!("Subcommand not implemented in phase 1. Run with --help for usage");
+        }
+        None => {
+            println!("Run with --help for usage");
+        }
     }
 
     Ok(())
