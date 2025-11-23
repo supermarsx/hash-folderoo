@@ -30,6 +30,7 @@ filetime = "0.2"
 tiny-keccak = { version = "2.0", features = ["k12", "parallel_hash"] }
 blake2b_simd = "1.0"
 turboshake = "0.5"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
 
 [features]
 default = ["blake3"]

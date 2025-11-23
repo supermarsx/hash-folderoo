@@ -6,6 +6,7 @@ pub mod parallelhash;
 pub mod registry;
 pub mod shake256;
 pub mod turboshake;
+pub mod xxh3;
 
 pub use blake2b::Blake2bHasher;
 pub use blake2bp::Blake2bpHasher;
@@ -15,3 +16,4 @@ pub use parallelhash::ParallelHash256Hasher;
 pub use registry::Algorithm;
 pub use shake256::Shake256Hasher;
 pub use turboshake::TurboShake256Hasher;
+pub use xxh3::Xxh3Expander;

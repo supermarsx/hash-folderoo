@@ -23,7 +23,9 @@ The original project started as an Electron desktop utility; this crate rebuilds
 | `report` | Summarize a hash map (stats, duplicates, largest files, etc.). | `--input`, `--format {json,text}`, `--include`, `--top-n` |
 | `benchmark` | Benchmark supported algorithms over an in-memory buffer. | `--algorithm {blake3,shake256,all}`, `--size <bytes>` |
 
-Run `cargo run -- --help` for global options and `cargo run -- <command> --help` for per-command flags. Use `--alg-list` to print the currently compiled hashing algorithms (BLAKE3, BLAKE2b, BLAKE2bp, SHAKE256, TurboSHAKE256, ParallelHash256, KangarooTwelve).
+Run `cargo run -- --help` for global options and `cargo run -- <command> --help` for per-command flags. Use `--alg-list` to print the currently compiled hashing algorithms (BLAKE3, BLAKE2b, BLAKE2bp, SHAKE256, TurboSHAKE256, ParallelHash256, XXH3-1024, KangarooTwelve).
+
+`xxh3-1024` is a non-cryptographic option that expands XXH3 into a 1024-bit digest via deterministic counters, suitable for fast comparisons/benchmarks instead of integrity/security guarantees.
 
 ## Installation
 
@@ -243,7 +245,7 @@ Use `--threads` and `--max-ram` to override the auto plan. The buffer pool enfor
 
 ## Roadmap
 
-The current binary ships with BLAKE3, BLAKE2b, BLAKE2bp, SHAKE256, TurboSHAKE256, ParallelHash256, and KangarooTwelve hashing backends plus the core CLI workflow. The design document (`spec.md`) covers upcoming work such as additional algorithms (xxHash3, WyHash/MeowHash, etc.), richer booster-mode controls, persisted copy plans, and a GUI front-end. Contributions aligning with that plan are welcome - open an issue to discuss larger changes.
+The current binary ships with BLAKE3, BLAKE2b, BLAKE2bp, SHAKE256, TurboSHAKE256, ParallelHash256, XXH3-1024, and KangarooTwelve hashing backends plus the core CLI workflow. The design document (`spec.md`) covers upcoming work such as additional algorithms (WyHash/MeowHash, etc.), richer booster-mode controls, persisted copy plans, and a GUI front-end. Contributions aligning with that plan are welcome - open an issue to discuss larger changes.
 
 ## License
 

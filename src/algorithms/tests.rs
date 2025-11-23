@@ -1,6 +1,6 @@
 use crate::algorithms::{
     Blake2bHasher, Blake2bpHasher, Blake3Hasher, K12Hasher, ParallelHash256Hasher,
-    Shake256Hasher, TurboShake256Hasher,
+    Shake256Hasher, TurboShake256Hasher, Xxh3Expander,
 };
 use crate::hash::HasherImpl;
 use std::io::Read;
@@ -14,6 +14,7 @@ mod tests {
     use tiny_keccak::{IntoXof, ParallelHash, Xof};
     use tiny_keccak::{Hasher as TKHasher, KangarooTwelve};
     use turboshake::TurboShake256;
+    use xxhash_rust::xxh3::{xxh3_64_with_seed, Xxh3};
 
     #[test]
     fn blake3_matches_direct() {
@@ -141,6 +142,42 @@ mod tests {
             let exp = hex::encode(out);
 
             assert_eq!(got, exp, "parallelhash mismatch for input {:?}", inp);
+        }
+    }
+
+    fn expand_seed(seed: u64, out_len: usize) -> Vec<u8> {
+        if out_len == 0 {
+            return Vec::new();
+        }
+        let mut out = Vec::with_capacity(out_len);
+        let mut counter = 0u64;
+        let mut tweak = seed;
+        while out.len() < out_len {
+            let mut block_input = [0u8; 16];
+            block_input[..8].copy_from_slice(&seed.to_le_bytes());
+            block_input[8..].copy_from_slice(&counter.to_le_bytes());
+            let chunk = xxh3_64_with_seed(&block_input, tweak);
+            out.extend_from_slice(&chunk.to_le_bytes());
+            counter = counter.wrapping_add(1);
+            tweak = tweak.wrapping_add(0x9E37_79B1_85EB_CA87);
+        }
+        out.truncate(out_len);
+        out
+    }
+
+    #[test]
+    fn xxh3_expander_matches_reference() {
+        let inputs: &[&[u8]] = &[b"", b"hello", b"The quick brown fox"];
+        for &inp in inputs {
+            let mut h = Xxh3Expander::new();
+            h.update_reader(&mut &inp[..]).unwrap();
+            let got = h.finalize_hex(128);
+
+            let mut ref_hasher = Xxh3::new();
+            ref_hasher.update(inp);
+            let seed = ref_hasher.digest();
+            let expected = expand_seed(seed, 128);
+            assert_eq!(got, hex::encode(expected), "xxh3 mismatch for {:?}", inp);
         }
     }
 }
