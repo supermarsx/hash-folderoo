@@ -23,7 +23,17 @@ This crate rebuilds the feature set as an idiomatic, multi-command CLI with stro
 | `report` | Summarize a hash map (stats, duplicates, largest files, etc.). | `--input`, `--format {json,text}`, `--include`, `--top-n` |
 | `benchmark` | Benchmark supported algorithms over an in-memory buffer. | `--algorithm {blake3,shake256,all}`, `--size <bytes>` |
 
-Run `cargo run -- --help` for global options and `cargo run -- <command> --help` for per-command flags. Use `--alg-list` to print the currently compiled hashing algorithms (BLAKE3, BLAKE2b, BLAKE2bp, SHAKE256, TurboSHAKE256, ParallelHash256, XXH3-1024, WyHash-1024, KangarooTwelve).
+If you installed a prebuilt binary, invoke the binary directly for help and to run commands. If you're developing locally, using `cargo run` remains supported.
+
+```bash
+# show global help
+hash-folderoo --help
+
+# show per-command help (example)
+hash-folderoo hashmap --help
+```
+
+Use `--alg-list` to print the currently compiled hashing algorithms (BLAKE3, BLAKE2b, BLAKE2bp, SHAKE256, TurboSHAKE256, ParallelHash256, XXH3-1024, WyHash-1024, KangarooTwelve).
 
 `xxh3-1024` and `wyhash-1024` are non-cryptographic options that expand fast hashes into 1024-bit digests via deterministic counters, suitable for high-speed comparisons/benchmarks instead of integrity/security guarantees.
 
@@ -34,13 +44,53 @@ Run `cargo run -- --help` for global options and `cargo run -- <command> --help`
 - Rust 1.75+ (edition 2021) and Cargo.
 - Windows, macOS, or Linux. The code avoids platform-specific assumptions.
 
-### Build or install locally
+### Install prebuilt binaries (recommended)
+
+We publish cross-platform release artifacts on GitHub Releases. Each automatic release uses the commit short SHA as the tag (for example `v1a2b3c4`) and artifacts are produced per target with names like `hash-folderoo-<target>-<release>.tar.gz` or `.zip`.
+
+Examples (replace `vSHORT` with the release tag you want):
+
+Linux x86_64
 
 ```bash
-# Build release binaries in target/release/hash-folderoo
+curl -Lo hash-folderoo-vSHORT.tar.gz \
+  https://github.com/supermarsx/hash-folderoo/releases/download/vSHORT/hash-folderoo-x86_64-unknown-linux-gnu-vSHORT.tar.gz
+tar -xzf hash-folderoo-vSHORT.tar.gz
+sudo install -m 755 hash-folderoo /usr/local/bin/
+```
+
+macOS (Intel / Apple Silicon)
+
+```bash
+curl -Lo hash-folderoo-vSHORT.tar.gz \
+  https://github.com/supermarsx/hash-folderoo/releases/download/vSHORT/hash-folderoo-x86_64-apple-darwin-vSHORT.tar.gz
+tar -xzf hash-folderoo-vSHORT.tar.gz
+sudo install -m 755 hash-folderoo /usr/local/bin/
+# or to install into homebrew prefix on Apple Silicon:
+sudo install -m 755 hash-folderoo /opt/homebrew/bin/
+```
+
+Windows (PowerShell)
+
+```powershell
+$tag = 'vSHORT'
+Invoke-WebRequest -Uri "https://github.com/supermarsx/hash-folderoo/releases/download/$tag/hash-folderoo-x86_64-pc-windows-msvc-$tag.zip" -OutFile zipfile.zip
+Expand-Archive zipfile.zip -DestinationPath .\dist
+# Move the executable somewhere in PATH, e.g. $HOME\bin
+Move-Item -Path .\dist\hash-folderoo.exe -Destination $HOME\bin\hash-folderoo.exe
+```
+
+We recommend verifying checksums/signatures before installing. CI can be extended to generate checksums for each artifact and attach them to the release.
+
+### Build from source (developer / optional)
+
+If you prefer to build locally (development or debugging), you can still use Cargo:
+
+```bash
+# Build release binary at target/release/hash-folderoo
 cargo build --release
 
-# Install into ~/.cargo/bin for easy access
+# Install into your cargo bin directory
 cargo install --path .
 ```
 
@@ -49,7 +99,7 @@ cargo install --path .
 ### 1. Hash a directory
 
 ```bash
-cargo run -- hashmap \
+hash-folderoo hashmap \
   --path ./sample-data \
   --output snapshots/sample.json \
   --format json \
@@ -66,7 +116,7 @@ cargo run -- hashmap \
 ### 2. Compare two snapshots (or live folders)
 
 ```bash
-cargo run -- compare \
+hash-folderoo compare \
   --source snapshots/sample.json \
   --target ./backup-drive \
   --format json
@@ -79,10 +129,10 @@ cargo run -- compare \
 
 ```bash
 # Preview (default)
-cargo run -- copydiff --source ./src --target ./dst --algorithm blake3
+hash-folderoo copydiff --source ./src --target ./dst --algorithm blake3
 
 # Execute plan with conflict handling
-cargo run -- copydiff \
+hash-folderoo copydiff \
   --source ./src \
   --target ./dst \
   --execute \
@@ -96,7 +146,7 @@ cargo run -- copydiff \
 ### 4. Clean up empty directories
 
 ```bash
-cargo run -- removempty --path ./tmp --min-empty-depth 2 --dry-run
+hash-folderoo removempty --path ./tmp --min-empty-depth 2 --dry-run
 ```
 
 Glob exclusions are relative to the provided root (e.g., `--exclude "**/node_modules/**"`).
@@ -104,7 +154,7 @@ Glob exclusions are relative to the provided root (e.g., `--exclude "**/node_mod
 ### 5. Batch rename files
 
 ```bash
-cargo run -- renamer --path ./photos --pattern "-draft->" --dry-run
+hash-folderoo renamer --path ./photos --pattern "-draft->" --dry-run
 ```
 
 Patterns follow `old->new`; omitting `->` means "replace with nothing".
@@ -112,7 +162,7 @@ Patterns follow `old->new`; omitting `->` means "replace with nothing".
 ### 6. Generate a report
 
 ```bash
-cargo run -- report \
+hash-folderoo report \
   --input snapshots/sample.json \
   --format json \
   --include stats,duplicates,largest \
@@ -124,7 +174,7 @@ Reports compute totals, duplicate groups, wasted bytes, top extensions, and larg
 ### 7. Benchmark hashing throughput
 
 ```bash
-cargo run -- benchmark --algorithm all --size 134217728   # 128 MiB buffer
+hash-folderoo benchmark --algorithm all --size 134217728   # 128 MiB buffer
 ```
 
 Use this to gauge algorithm speed on your hardware.
@@ -132,7 +182,7 @@ Use this to gauge algorithm speed on your hardware.
 ### 8. Discover algorithms at runtime
 
 ```bash
-cargo run -- --alg-list
+hash-folderoo --alg-list
 ```
 
 Outputs default digest lengths, whether the algorithm is cryptographic, and XOF capabilities.

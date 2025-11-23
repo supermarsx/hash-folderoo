@@ -186,7 +186,10 @@ pub fn execute_copy_plan(
     for i in 0..plan.ops.len() {
         // take a short-lived mutable borrow for the current op
         if plan.ops[i].done {
-            println!("Skipping completed op {} -> {}", plan.ops[i].src, plan.ops[i].dst);
+            println!(
+                "Skipping completed op {} -> {}",
+                plan.ops[i].src, plan.ops[i].dst
+            );
             continue;
         }
         let src = Path::new(&plan.ops[i].src);
