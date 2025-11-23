@@ -1,6 +1,6 @@
 use crate::algorithms::{
     Blake2bHasher, Blake2bpHasher, Blake3Hasher, K12Hasher, ParallelHash256Hasher, Shake256Hasher,
-    TurboShake256Hasher, Xxh3Expander,
+    TurboShake256Hasher, WyHashExpander, Xxh3Expander,
 };
 use crate::hash::HasherImpl;
 
@@ -14,6 +14,7 @@ pub enum Algorithm {
     TurboShake256,
     ParallelHash256,
     Xxh3_1024,
+    Wyhash1024,
 }
 
 impl Algorithm {
@@ -27,6 +28,7 @@ impl Algorithm {
             Algorithm::TurboShake256,
             Algorithm::ParallelHash256,
             Algorithm::Xxh3_1024,
+            Algorithm::Wyhash1024,
         ]
     }
 
@@ -44,6 +46,7 @@ impl Algorithm {
             "turboshake" | "turboshake256" => Some(Algorithm::TurboShake256),
             "parallelhash" | "parallelhash256" => Some(Algorithm::ParallelHash256),
             "xxh3" | "xxh3-1024" => Some(Algorithm::Xxh3_1024),
+            "wyhash" | "wyhash-1024" => Some(Algorithm::Wyhash1024),
             _ => None,
         }
     }
@@ -58,6 +61,7 @@ impl Algorithm {
             Algorithm::TurboShake256 => TurboShake256Hasher::new_boxed(),
             Algorithm::ParallelHash256 => ParallelHash256Hasher::new_boxed(),
             Algorithm::Xxh3_1024 => Xxh3Expander::new_boxed(),
+            Algorithm::Wyhash1024 => WyHashExpander::new_boxed(),
         }
     }
 
@@ -71,6 +75,7 @@ impl Algorithm {
             Algorithm::TurboShake256 => "turboshake256",
             Algorithm::ParallelHash256 => "parallelhash256",
             Algorithm::Xxh3_1024 => "xxh3-1024",
+            Algorithm::Wyhash1024 => "wyhash-1024",
         }
     }
 }

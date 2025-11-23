@@ -1,6 +1,6 @@
 use crate::algorithms::{
     Blake2bHasher, Blake2bpHasher, Blake3Hasher, K12Hasher, ParallelHash256Hasher,
-    Shake256Hasher, TurboShake256Hasher, Xxh3Expander,
+    Shake256Hasher, TurboShake256Hasher, WyHashExpander, Xxh3Expander,
 };
 use crate::hash::HasherImpl;
 use std::io::Read;
@@ -14,6 +14,7 @@ mod tests {
     use tiny_keccak::{IntoXof, ParallelHash, Xof};
     use tiny_keccak::{Hasher as TKHasher, KangarooTwelve};
     use turboshake::TurboShake256;
+    use wyhash::WyHash;
     use xxhash_rust::xxh3::{xxh3_64_with_seed, Xxh3};
 
     #[test]
@@ -178,6 +179,41 @@ mod tests {
             let seed = ref_hasher.digest();
             let expected = expand_seed(seed, 128);
             assert_eq!(got, hex::encode(expected), "xxh3 mismatch for {:?}", inp);
+        }
+    }
+
+    fn wyhash_expand(seed: u64, out_len: usize) -> Vec<u8> {
+        if out_len == 0 {
+            return Vec::new();
+        }
+        let mut out = Vec::with_capacity(out_len);
+        let mut counter = 0u64;
+        let mut current_seed = seed;
+        while out.len() < out_len {
+            let mut hasher = WyHash::with_seed(current_seed);
+            hasher.write(&counter.to_le_bytes());
+            let chunk = hasher.finish();
+            out.extend_from_slice(&chunk.to_le_bytes());
+            counter = counter.wrapping_add(1);
+            current_seed = current_seed.wrapping_add(0xA076_1D64_78BD_642F);
+        }
+        out.truncate(out_len);
+        out
+    }
+
+    #[test]
+    fn wyhash_expander_matches_reference() {
+        let inputs: &[&[u8]] = &[b"", b"hello", b"The quick brown fox"];
+        for &inp in inputs {
+            let mut h = WyHashExpander::new();
+            h.update_reader(&mut &inp[..]).unwrap();
+            let got = h.finalize_hex(128);
+
+            let mut ref_hasher = WyHash::with_seed(0);
+            ref_hasher.write(inp);
+            let seed = ref_hasher.finish();
+            let expected = wyhash_expand(seed, 128);
+            assert_eq!(got, hex::encode(expected), "wyhash mismatch for {:?}", inp);
         }
     }
 }

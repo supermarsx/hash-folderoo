@@ -1,3 +1,4 @@
+use chrono::Utc;
 use std::fs;
 use std::io::{self as stdio, Write};
 use std::path::{Path, PathBuf};
@@ -38,16 +39,33 @@ pub struct CopyOp {
     pub dst: String,
     /// "copy" or "move" - we currently only implement copy
     pub op: String,
+    #[serde(default)]
+    pub done: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PlanMetadata {
+    pub version: u8,
+    pub generated_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_root: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_root: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CopyPlan {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<PlanMetadata>,
     pub ops: Vec<CopyOp>,
 }
 
 impl CopyPlan {
     pub fn new() -> Self {
-        Self { ops: Vec::new() }
+        Self {
+            meta: None,
+            ops: Vec::new(),
+        }
     }
 }
 
@@ -64,6 +82,12 @@ pub fn generate_copy_plan(
     target_root: Option<&Path>,
 ) -> CopyPlan {
     let mut plan = CopyPlan::new();
+    plan.meta = Some(PlanMetadata {
+        version: 1,
+        generated_at: Utc::now().to_rfc3339(),
+        source_root: source_root.map(|p| p.to_string_lossy().into_owned()),
+        target_root: target_root.map(|p| p.to_string_lossy().into_owned()),
+    });
 
     // Handle changed files (explicit source -> target mapping)
     for (s, t) in &report.changed {
@@ -71,6 +95,7 @@ pub fn generate_copy_plan(
             src: s.path.clone(),
             dst: t.path.clone(),
             op: "copy".into(),
+            done: false,
         });
     }
 
@@ -80,6 +105,7 @@ pub fn generate_copy_plan(
             src: s.path.clone(),
             dst: t.path.clone(),
             op: "copy".into(),
+            done: false,
         });
     }
 
@@ -104,10 +130,15 @@ pub fn generate_copy_plan(
             src: s.path.clone(),
             dst: dst_str,
             op: "copy".into(),
+            done: false,
         });
     }
 
     plan
+}
+
+pub fn write_plan(path: &Path, plan: &CopyPlan) -> Result<()> {
+    crate::io::write_json(path, plan)
 }
 
 /// Execute a copy plan performing filesystem operations.
@@ -147,8 +178,16 @@ fn resolve_destination(dst: &Path, strategy: ConflictStrategy) -> Result<Option<
     }
 }
 
-pub fn execute_copy_plan(plan: &CopyPlan, opts: CopyOptions) -> Result<()> {
-    for op in &plan.ops {
+pub fn execute_copy_plan(
+    plan: &mut CopyPlan,
+    opts: CopyOptions,
+    persist_path: Option<&Path>,
+) -> Result<()> {
+    for op in &mut plan.ops {
+        if op.done {
+            println!("Skipping completed op {} -> {}", op.src, op.dst);
+            continue;
+        }
         let src = Path::new(&op.src);
         let dst = Path::new(&op.dst);
 
@@ -199,19 +238,33 @@ pub fn execute_copy_plan(plan: &CopyPlan, opts: CopyOptions) -> Result<()> {
                 }
             }
         }
+        op.done = true;
+        if let Some(path) = persist_path {
+            write_plan(path, plan)?;
+        }
     }
     Ok(())
 }
 
 /// Print what would be done for a given plan.
 pub fn dry_run_copy_plan(plan: &CopyPlan) {
+    if let Some(meta) = &plan.meta {
+        println!("Plan generated at {}", meta.generated_at);
+        if let Some(src) = &meta.source_root {
+            println!("  source root: {}", src);
+        }
+        if let Some(dst) = &meta.target_root {
+            println!("  target root: {}", dst);
+        }
+    }
     if plan.ops.is_empty() {
         println!("No copy operations to perform.");
         return;
     }
     println!("Planned copy operations:");
     for op in &plan.ops {
-        println!("  {}: {} -> {}", op.op, op.src, op.dst);
+        let status = if op.done { " (done)" } else { "" };
+        println!("  {}: {} -> {}{}", op.op, op.src, op.dst, status);
     }
 }
 

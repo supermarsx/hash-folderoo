@@ -21,6 +21,17 @@ use hash_folderoo::memory::MemoryMode;
 use hash_folderoo::pipeline::Pipeline;
 use hash_folderoo::utils::setup_logging;
 
+fn format_entry_path(path: &Path, strip_prefix: Option<&Path>, root: &Path) -> String {
+    let logical = strip_prefix
+        .and_then(|prefix| path.strip_prefix(prefix).ok())
+        .or_else(|| path.strip_prefix(root).ok())
+        .unwrap_or(path);
+    logical
+        .components()
+        .collect::<PathBuf>()
+        .to_string_lossy()
+        .replace('\\', "/")
+}
 fn print_algorithm_list() {
     println!("Available algorithms:\n");
     for alg in Algorithm::all() {
@@ -218,11 +229,24 @@ fn main() -> anyhow::Result<()> {
             // Worker closure: hash a single file and push MapEntry into shared vector
             let alg_for_worker = alg_enum;
             let entries_clone = entries.clone();
-            let strip_prefix_clone = strip_prefix.clone();
+            let scan_root = PathBuf::from(&path);
+            let canonical_root =
+                std::fs::canonicalize(&scan_root).unwrap_or_else(|_| scan_root.clone());
+            let strip_prefix_abs = strip_prefix.as_ref().map(|p| {
+                let candidate = if p.is_absolute() {
+                    p.clone()
+                } else {
+                    canonical_root.join(p)
+                };
+                std::fs::canonicalize(&candidate).unwrap_or(candidate)
+            });
+
             let exclude_set_clone = exclude_set.clone();
             let out_len_inner = out_len;
 
             let timings_clone = timings.clone();
+            let root_for_worker = canonical_root.clone();
+            let strip_for_worker = strip_prefix_abs.clone();
 
             let worker = move |path_buf: PathBuf,
                                buffer_pool: Arc<hash_folderoo::memory::BufferPool>|
@@ -239,14 +263,8 @@ fn main() -> anyhow::Result<()> {
                     return Ok(());
                 }
 
-                let rel = if let Some(strip) = &strip_prefix_clone {
-                    match path_buf.strip_prefix(strip) {
-                        Ok(s) => s.to_string_lossy().into_owned(),
-                        Err(_) => path_buf.to_string_lossy().into_owned(),
-                    }
-                } else {
-                    path_buf.to_string_lossy().into_owned()
-                };
+                let rel =
+                    format_entry_path(&path_buf, strip_for_worker.as_deref(), &root_for_worker);
 
                 let metadata = path_buf.metadata().ok();
                 let size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
@@ -283,7 +301,7 @@ fn main() -> anyhow::Result<()> {
             // Run the pipeline
             let processed = pipeline
                 .run(
-                    &path,
+                    &scan_root,
                     &excludes,
                     depth,
                     follow_symlinks,
@@ -312,7 +330,7 @@ fn main() -> anyhow::Result<()> {
                 version: 1,
                 generated_by: "hash-folderoo",
                 timestamp: Utc::now().to_rfc3339(),
-                root: path.clone(),
+                root: canonical_root.to_string_lossy().into_owned(),
                 algorithm: AlgorithmMeta {
                     name: alg_info.name.clone(),
                     params: algorithm_params,

@@ -558,6 +558,7 @@ dependencies = [
  "toml",
  "turboshake",
  "walkdir",
+ "wyhash",
  "xxhash-rust",
 ]
 
@@ -842,6 +843,12 @@ name = "r-efi"
 version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
+
+[[package]]
+name = "rand_core"
+version = "0.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "99d9a13982dcf210057a8a78572b2217b667c3beacbf3a0d8b454f6f82837d38"
 
 [[package]]
 name = "rayon"
@@ -1607,6 +1614,15 @@ name = "wit-bindgen"
 version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f17a85883d4e6d00e8a97c586de764dabcc06133f7f1d55dce5cdc070ad7fe59"
+
+[[package]]
+name = "wyhash"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca4d373340c479fd1e779f7a763acee85da3e423b1a9a9acccf97babcc92edbb"
+dependencies = [
+ "rand_core",
+]
 
 [[package]]
 name = "xxhash-rust"
