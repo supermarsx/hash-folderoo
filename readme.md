@@ -1,7 +1,7 @@
 # hash-folderoo
 
 Rust toolkit for hashing folders, comparing snapshots, and automating clean-up tasks.  
-The original project started as an Electron desktop utility; this crate rebuilds the feature set as an idiomatic, multi-command CLI with strong typing, streaming IO, and cross-platform support. The long-term design and extra context live in `spec.md`.
+This crate rebuilds the feature set as an idiomatic, multi-command CLI with strong typing, streaming IO, and cross-platform support. The long-term design and extra context live in `spec.md`.
 
 ## Highlights
 
