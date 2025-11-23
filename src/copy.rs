@@ -183,13 +183,14 @@ pub fn execute_copy_plan(
     opts: CopyOptions,
     persist_path: Option<&Path>,
 ) -> Result<()> {
-    for op in &mut plan.ops {
-        if op.done {
-            println!("Skipping completed op {} -> {}", op.src, op.dst);
+    for i in 0..plan.ops.len() {
+        // take a short-lived mutable borrow for the current op
+        if plan.ops[i].done {
+            println!("Skipping completed op {} -> {}", plan.ops[i].src, plan.ops[i].dst);
             continue;
         }
-        let src = Path::new(&op.src);
-        let dst = Path::new(&op.dst);
+        let src = Path::new(&plan.ops[i].src);
+        let dst = Path::new(&plan.ops[i].dst);
 
         // Ensure source exists
         if !src.exists() {
@@ -238,8 +239,9 @@ pub fn execute_copy_plan(
                 }
             }
         }
-        op.done = true;
+        plan.ops[i].done = true;
         if let Some(path) = persist_path {
+            // mutable borrow ended here; safe to write the plan
             write_plan(path, plan)?;
         }
     }
@@ -319,6 +321,7 @@ mod tests {
             src: src_file.to_string_lossy().into_owned(),
             dst: dst_file.to_string_lossy().into_owned(),
             op: "copy".into(),
+            done: false,
         });
 
         // Skip strategy should keep original
@@ -326,7 +329,7 @@ mod tests {
             conflict: ConflictStrategy::Skip,
             preserve_times: false,
         };
-        execute_copy_plan(&plan, opts).unwrap();
+        execute_copy_plan(&mut plan, opts, None).unwrap();
         let contents = fs::read(&dst_file).unwrap();
         assert_eq!(&contents, b"existing");
 
@@ -335,7 +338,7 @@ mod tests {
             conflict: ConflictStrategy::Rename,
             preserve_times: false,
         };
-        execute_copy_plan(&plan, opts).unwrap();
+        execute_copy_plan(&mut plan, opts, None).unwrap();
         let renamed = dst_dir.join("file-copy1.txt");
         assert!(renamed.exists());
         let new_contents = fs::read(renamed).unwrap();

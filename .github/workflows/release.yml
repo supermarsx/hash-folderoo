@@ -1,0 +1,100 @@
+name: Release (auto)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create_release.outputs.id }}
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.set_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get short SHA and create version
+        id: set_version
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          VERSION=v${SHORT_SHA}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+      - name: Create GitHub release
+        id: create_release
+        uses: actions/create-release@v1
+        with:
+          tag_name: ${{ steps.set_version.outputs.version }}
+          release_name: ${{ steps.set_version.outputs.version }}
+          body: "Automated release for commit ${{ steps.set_version.outputs.short_sha }}"
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-and-upload:
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: macos-latest
+            target: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - name: Add rust target
+        run: |
+          rustup target add ${{ matrix.target }} || true
+      - name: Build release binary
+        run: |
+          set -e
+          cargo build --release --target ${{ matrix.target }}
+      - name: Package binary
+        id: pack
+        run: |
+          BINNAME=hash-folderoo
+          TARGET_DIR=target/${{ matrix.target }}/release
+          OUT_DIR=dist
+          rm -rf ${OUT_DIR}
+          mkdir -p ${OUT_DIR}
+          case "${{ matrix.os }}" in
+            windows-latest)
+              cp ${TARGET_DIR}/${BINNAME}.exe ${OUT_DIR}/ || true
+              cd ${OUT_DIR}
+              powershell -Command "Compress-Archive -Path * -DestinationPath ${BINNAME}-${{ matrix.target }}.zip"
+              echo "asset_file=${PWD}/${BINNAME}-${{ matrix.target }}.zip" >> $GITHUB_OUTPUT
+              ;;
+            *)
+              cp ${TARGET_DIR}/${BINNAME} ${OUT_DIR}/ || true
+              tar -czf ${BINNAME}-${{ matrix.target }}.tar.gz -C ${OUT_DIR} .
+              echo "asset_file=${PWD}/${BINNAME}-${{ matrix.target }}.tar.gz" >> $GITHUB_OUTPUT
+              ;;
+          esac
+      - name: Upload release asset
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ needs.prepare.outputs.upload_url }}
+          asset_path: ${{ steps.pack.outputs.asset_file }}
+          asset_name: ${{ matrix.target }}-${{ needs.prepare.outputs.version }}
+          asset_content_type: application/octet-stream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Debug list
+        if: ${{ always() }}
+        run: ls -la dist || true
+      # done

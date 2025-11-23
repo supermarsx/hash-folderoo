@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  format:
+    name: Check formatting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install rustfmt
+        uses: dtolnay/gh-actions-rust@stable
+        with:
+          toolchain: stable
+      - name: Run rustfmt (check)
+        run: |
+          cargo fmt --all -- --check
+
+  lint:
+    name: Run clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: Run clippy
+        run: |
+          cargo clippy --all-targets -- -D warnings
+
+  tests:
+    name: Run tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Run tests
+        run: cargo test --all --verbose
+
+  build:
+    name: Cross build matrix
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: macos-latest
+            target: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Add target
+        run: rustup target add ${{ matrix.target }} || true
+      - name: Cargo build (release)
+        env:
+          CARGO_TERM_COLOR: always
+        run: |
+          set -e
+          cargo build --release --target ${{ matrix.target }}
+      - name: Package artifact
+        run: |
+          BINNAME=hash-folderoo
+          TARGET_DIR=target/${{ matrix.target }}/release
+          case "${{ matrix.os }}" in
+            windows-latest)
+              mkdir -p dist
+              cp ${TARGET_DIR}/${BINNAME}.exe dist/
+              cd dist || exit
+              powershell -Command "Compress-Archive -Path * -DestinationPath ${BINNAME}-${{ matrix.target }}.zip"
+              ;;
+            *)
+              mkdir -p dist
+              cp ${TARGET_DIR}/${BINNAME} dist/ || true
+              tar -czf ${BINNAME}-${{ matrix.target }}.tar.gz -C dist .
+              ;;
+          esac
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}-build
+          path: |
+            dist/${BINNAME}-${{ matrix.target }}.tar.gz
+            dist/${BINNAME}-${{ matrix.target }}.zip

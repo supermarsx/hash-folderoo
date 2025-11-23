@@ -243,6 +243,25 @@ Use `--threads` and `--max-ram` to override the auto plan. The buffer pool enfor
 - Logging is powered by `env_logger`; set `RUST_LOG=debug` for verbose traces while hacking.
 - See `spec.md` for the long-term blueprint (extra algorithms, GUI front-ends, richer copy planners, etc.).
 
+## CI & Releases ⚙️
+
+This repository includes GitHub Actions workflows to ensure code quality and to publish cross-platform binaries:
+
+- Continuous Integration (CI) - `.github/workflows/ci.yml` runs on PRs and pushes to `main` and contains separate jobs for:
+  - format checks (`cargo fmt -- --check`)
+  - linting (`cargo clippy --all-targets`)
+  - unit & integration tests (`cargo test`)
+  - matrixed release-style builds that compile the binary for common targets (Linux, macOS, Windows) and both x86_64 and aarch64 where possible.
+
+- Automated release workflow - `.github/workflows/release.yml` triggers on pushes to `main` and automatically:
+  - uses the commit short SHA as the release version (e.g. `v1a2b3c4`)
+  - builds platform-specific binaries for: Linux (x86_64/aarch64), Windows (x86_64/aarch64), macOS (x86_64/aarch64)
+  - uploads the compressed artifacts to a GitHub Release created for that commit
+
+Notes:
+- GitHub runner capabilities determine whether every target can be built on the runners provided; cross-compilation is attempted via rust target tooling. If a specific target cannot be produced on a runner, the release workflow will fail for that matrix cell — this ensures each published artifact was actually built on a runner that produced it.
+- If you want to publish stable semver releases instead of short-sha releases, adapt `.github/workflows/release.yml` to trigger on tags (e.g., push tags) and set a semantic version.
+
 ## Roadmap
 
 The current binary ships with BLAKE3, BLAKE2b, BLAKE2bp, SHAKE256, TurboSHAKE256, ParallelHash256, XXH3-1024, WyHash-1024, and KangarooTwelve hashing backends plus the core CLI workflow. The design document (`spec.md`) covers upcoming work such as additional algorithms (MeowHash, etc.), richer booster-mode controls, persisted copy plans, and a GUI front-end. Contributions aligning with that plan are welcome - open an issue to discuss larger changes.

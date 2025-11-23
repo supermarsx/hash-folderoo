@@ -1,6 +1,13 @@
 [package]
 name = "hash-folderoo"
 version = "0.1.0"
+description = "Multi-command cross-platform folder hashing and diff toolkit"
+readme = "readme.md"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/supermarsx/hash-folderoo"
+homepage = "https://github.com/supermarsx/hash-folderoo"
+keywords = ["hash", "filesystem", "cli", "cross-platform"]
+authors = ["supermarsx <>"]
 edition = "2021"
 
 [dependencies]
