@@ -511,7 +511,7 @@ fn main() -> anyhow::Result<()> {
                     }
                     Algorithm::Blake3
                 });
-            let plan = if let Some(p) = &args.plan {
+            let mut plan = if let Some(p) = &args.plan {
                 // load JSON plan
                 let f = File::open(p)
                     .map_err(|e| anyhow::anyhow!("failed opening plan {:?}: {}", p, e))?;
@@ -574,7 +574,7 @@ fn main() -> anyhow::Result<()> {
                     conflict,
                     preserve_times: args.preserve_times,
                 };
-                copy::execute_copy_plan(&plan, opts).map_err(|e| anyhow::anyhow!(e))?;
+                copy::execute_copy_plan(&mut plan, opts, None).map_err(|e| anyhow::anyhow!(e))?;
             } else {
                 // default to dry-run output
                 copy::dry_run_copy_plan(&plan);
