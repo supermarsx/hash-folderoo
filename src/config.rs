@@ -124,6 +124,61 @@ impl RuntimeConfig {
             }
         }
     }
+
+    pub fn validate(&self) -> anyhow::Result<()> {
+        if let Some(g) = &self.general {
+            if let Some(format) = g.format.as_deref() {
+                let fmt = format.to_lowercase();
+                if fmt != "json" && fmt != "csv" {
+                    anyhow::bail!("invalid general.format '{}': use json or csv", format);
+                }
+            }
+            if let Some(threads) = g.threads {
+                if threads == 0 {
+                    anyhow::bail!("general.threads must be greater than 0");
+                }
+            }
+            if let Some(depth) = g.depth {
+                if depth == 0 {
+                    anyhow::bail!("general.depth must be greater than 0 when provided");
+                }
+            }
+        }
+
+        if let Some(a) = &self.algorithm {
+            if let Some(name) = a.name.as_deref() {
+                if name.trim().is_empty() {
+                    anyhow::bail!("algorithm.name cannot be empty");
+                }
+            }
+            if let Some(len) = a.xof_length {
+                if len == 0 {
+                    anyhow::bail!("algorithm.xof_length must be greater than 0");
+                }
+            }
+        }
+
+        if let Some(m) = &self.memory {
+            if let Some(mode) = m.mode.as_deref() {
+                match mode.to_lowercase().as_str() {
+                    "stream" | "balanced" | "booster" => {}
+                    other => {
+                        anyhow::bail!(
+                            "memory.mode '{}' is invalid (expected stream|balanced|booster)",
+                            other
+                        )
+                    }
+                }
+            }
+            if let Some(max_ram) = m.max_ram {
+                if max_ram == 0 {
+                    anyhow::bail!("memory.max_ram must be greater than 0");
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 const CONFIG_FILENAMES: &[&str] = &["config.toml", "config.yaml", "config.yml", "config.json"];
@@ -185,6 +240,8 @@ pub fn load_runtime_config(cli_path: Option<&Path>) -> anyhow::Result<RuntimeCon
             .with_context(|| format!("loading config from --config {:?}", p))?;
         cfg.merge(cli_cfg);
     }
+
+    cfg.validate()?;
 
     Ok(cfg)
 }
@@ -287,5 +344,39 @@ pub fn apply_env_overrides(cfg: &mut RuntimeConfig) {
         if let Some(bytes) = parse_u64(&max_ram) {
             cfg.memory.get_or_insert_with(Default::default).max_ram = Some(bytes);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_invalid_format() {
+        let cfg = RuntimeConfig {
+            general: Some(GeneralConfig {
+                format: Some("xml".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn accepts_valid_config() {
+        let cfg = RuntimeConfig {
+            general: Some(GeneralConfig {
+                format: Some("json".to_string()),
+                threads: Some(4),
+                ..Default::default()
+            }),
+            memory: Some(MemoryConfig {
+                mode: Some("balanced".to_string()),
+                max_ram: Some(1024),
+            }),
+            ..Default::default()
+        };
+        assert!(cfg.validate().is_ok());
     }
 }

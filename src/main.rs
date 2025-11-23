@@ -79,6 +79,7 @@ fn main() -> anyhow::Result<()> {
 
     let mut runtime_cfg = config::load_runtime_config(cli.config.as_deref())?;
     config::apply_env_overrides(&mut runtime_cfg);
+    runtime_cfg.validate()?;
 
     match &cli.command {
         Some(hash_folderoo::cli::Commands::Hashmap(args)) => {

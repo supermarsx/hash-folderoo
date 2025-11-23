@@ -1,15 +1,28 @@
-use crate::algorithms::{Blake3Hasher, Shake256Hasher};
+use crate::algorithms::{
+    Blake2bHasher, Blake2bpHasher, Blake3Hasher, K12Hasher, Shake256Hasher, TurboShake256Hasher,
+};
 use crate::hash::HasherImpl;
 
 #[derive(Clone, Copy)]
 pub enum Algorithm {
+    Blake2b,
+    Blake2bp,
     Blake3,
     Shake256,
+    K12,
+    TurboShake256,
 }
 
 impl Algorithm {
     pub fn all() -> &'static [Algorithm] {
-        &[Algorithm::Blake3, Algorithm::Shake256]
+        &[
+            Algorithm::Blake2b,
+            Algorithm::Blake2bp,
+            Algorithm::Blake3,
+            Algorithm::Shake256,
+            Algorithm::K12,
+            Algorithm::TurboShake256,
+        ]
     }
 
     pub fn list() -> Vec<&'static str> {
@@ -18,23 +31,35 @@ impl Algorithm {
 
     pub fn from_str(name: &str) -> Option<Algorithm> {
         match name.to_lowercase().as_str() {
+            "blake2b" | "blake2b-512" => Some(Algorithm::Blake2b),
+            "blake2bp" => Some(Algorithm::Blake2bp),
             "blake3" => Some(Algorithm::Blake3),
             "shake256" => Some(Algorithm::Shake256),
+            "k12" | "kangarootwelve" | "kangaroo12" => Some(Algorithm::K12),
+            "turboshake" | "turboshake256" => Some(Algorithm::TurboShake256),
             _ => None,
         }
     }
 
     pub fn create(&self) -> Box<dyn HasherImpl> {
         match self {
+            Algorithm::Blake2b => Blake2bHasher::new_boxed(),
+            Algorithm::Blake2bp => Blake2bpHasher::new_boxed(),
             Algorithm::Blake3 => Blake3Hasher::new_boxed(),
             Algorithm::Shake256 => Shake256Hasher::new_boxed(),
+            Algorithm::K12 => K12Hasher::new_boxed(),
+            Algorithm::TurboShake256 => TurboShake256Hasher::new_boxed(),
         }
     }
 
     pub fn name(&self) -> &'static str {
         match self {
+            Algorithm::Blake2b => "blake2b",
+            Algorithm::Blake2bp => "blake2bp",
             Algorithm::Blake3 => "blake3",
             Algorithm::Shake256 => "shake256",
+            Algorithm::K12 => "k12",
+            Algorithm::TurboShake256 => "turboshake256",
         }
     }
 }
