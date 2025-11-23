@@ -1,14 +1,15 @@
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::io::Write;
 
 use anyhow::{Context, Result};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
-use crate::io;
-use crate::pipeline::Pipeline;
-use crate::memory::MemoryMode;
 use crate::algorithms::Algorithm;
+use crate::hash::hash_path_with_pool;
+use crate::io;
+use crate::memory::MemoryMode;
+use crate::pipeline::Pipeline;
 
 /// Comparison report describing differences between two maps.
 #[derive(Debug, Serialize, Deserialize)]
@@ -36,16 +37,21 @@ impl ComparisonReport {
 
 /// Load a map from either a file (json/csv) or by hashing a directory.
 /// `input` may be a path to a file (json/csv) or a directory.
-/// When hashing a directory a default algorithm (blake3) and balanced memory mode are used.
-pub fn get_map_from_input(input: &str) -> Result<Vec<io::MapEntry>> {
+/// When hashing a directory the provided `algorithm` is used with balanced memory mode.
+pub fn get_map_from_input(input: &str, algorithm: Algorithm) -> Result<Vec<io::MapEntry>> {
     let p = Path::new(input);
 
     if p.exists() && p.is_file() {
         // Try file extension first
         if let Some(ext) = p.extension().and_then(|s| s.to_str()) {
             match ext.to_lowercase().as_str() {
-                "json" => return io::load_map_from_json(p).with_context(|| format!("loading json {:?}", p)),
-                "csv" => return io::load_map_from_csv(p).with_context(|| format!("loading csv {:?}", p)),
+                "json" => {
+                    return io::load_map_from_json(p)
+                        .with_context(|| format!("loading json {:?}", p))
+                }
+                "csv" => {
+                    return io::load_map_from_csv(p).with_context(|| format!("loading csv {:?}", p))
+                }
                 _ => {}
             }
         }
@@ -63,8 +69,7 @@ pub fn get_map_from_input(input: &str) -> Result<Vec<io::MapEntry>> {
 
     if p.exists() && p.is_dir() {
         // Hash the directory using pipeline similar to hashmap command.
-        // Use default algorithm Blake3 and balanced memory mode.
-        let alg = Algorithm::Blake3;
+        let alg = algorithm;
         let probe = alg.create();
         let out_len = probe.info().output_len_default;
 
@@ -74,26 +79,37 @@ pub fn get_map_from_input(input: &str) -> Result<Vec<io::MapEntry>> {
         let entries_clone = entries.clone();
 
         let alg_for_worker = alg;
-        let worker = move |path_buf: PathBuf, _pool: Arc<crate::memory::BufferPool>| -> anyhow::Result<()> {
+        let worker = move |path_buf: PathBuf,
+                           buffer_pool: Arc<crate::memory::BufferPool>|
+              -> anyhow::Result<()> {
             if !path_buf.is_file() {
                 return Ok(());
             }
             let rel = path_buf.to_string_lossy().into_owned();
-            let size = path_buf.metadata().map(|m| m.len()).unwrap_or(0);
+            let metadata = path_buf.metadata().ok();
+            let size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
+            let mtime = metadata
+                .as_ref()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|dur| dur.as_secs() as i64);
             let mut hasher = alg_for_worker.create();
-            let h = {
-                let f = std::fs::File::open(&path_buf)?;
-                let mut reader = std::io::BufReader::new(f);
-                hasher.update_reader(&mut reader)?;
-                hasher.finalize_hex(out_len)
+            hash_path_with_pool(hasher.as_mut(), &path_buf, &buffer_pool)?;
+            let h = hasher.finalize_hex(out_len);
+            let me = io::MapEntry {
+                path: rel,
+                hash: h,
+                size,
+                mtime,
             };
-            let me = io::MapEntry { path: rel, hash: h, size };
             let mut guard = entries_clone.lock().unwrap();
             guard.push(me);
             Ok(())
         };
 
-        pipeline.run(p, &[], worker).context("running pipeline to build map")?;
+        pipeline
+            .run(p, &[], None, false, true, worker)
+            .context("running pipeline to build map")?;
 
         let mut vec = entries.lock().unwrap().clone();
         vec.sort_by(|a, b| a.path.cmp(&b.path));
@@ -131,7 +147,8 @@ pub fn compare_maps(source: Vec<io::MapEntry>, target: Vec<io::MapEntry>) -> Com
     }
 
     // Track which target paths have been accounted for (to avoid double counting as new)
-    let mut accounted_target_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut accounted_target_paths: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
 
     // Process source entries
     for (path, src_entry) in &src_by_path {
@@ -303,15 +320,50 @@ mod tests {
     #[test]
     fn compare_basic() {
         let a = vec![
-            io::MapEntry { path: "a.txt".into(), hash: "h1".into(), size: 1 },
-            io::MapEntry { path: "b.txt".into(), hash: "h2".into(), size: 2 },
-            io::MapEntry { path: "c.txt".into(), hash: "h3".into(), size: 3 },
+            io::MapEntry {
+                path: "a.txt".into(),
+                hash: "h1".into(),
+                size: 1,
+                mtime: None,
+            },
+            io::MapEntry {
+                path: "b.txt".into(),
+                hash: "h2".into(),
+                size: 2,
+                mtime: None,
+            },
+            io::MapEntry {
+                path: "c.txt".into(),
+                hash: "h3".into(),
+                size: 3,
+                mtime: None,
+            },
         ];
         let b = vec![
-            io::MapEntry { path: "a.txt".into(), hash: "h1".into(), size: 1 }, // identical
-            io::MapEntry { path: "b.txt".into(), hash: "h2b".into(), size: 2 }, // changed
-            io::MapEntry { path: "d.txt".into(), hash: "h3".into(), size: 3 }, // moved (c -> d)
-            io::MapEntry { path: "e.txt".into(), hash: "h4".into(), size: 4 }, // new
+            io::MapEntry {
+                path: "a.txt".into(),
+                hash: "h1".into(),
+                size: 1,
+                mtime: None,
+            }, // identical
+            io::MapEntry {
+                path: "b.txt".into(),
+                hash: "h2b".into(),
+                size: 2,
+                mtime: None,
+            }, // changed
+            io::MapEntry {
+                path: "d.txt".into(),
+                hash: "h3".into(),
+                size: 3,
+                mtime: None,
+            }, // moved (c -> d)
+            io::MapEntry {
+                path: "e.txt".into(),
+                hash: "h4".into(),
+                size: 4,
+                mtime: None,
+            }, // new
         ];
 
         let r = compare_maps(a, b);

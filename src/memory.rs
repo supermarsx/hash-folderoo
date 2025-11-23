@@ -1,6 +1,6 @@
+use anyhow::Result;
+use log::warn;
 use std::sync::{Arc, Mutex};
-use std::num::NonZeroUsize;
-use anyhow::{Context, Result};
 use sysinfo::{System, SystemExt};
 
 /// Memory usage modes for the hashing engine.
@@ -103,7 +103,7 @@ impl PooledBuffer {
 
 impl Drop for PooledBuffer {
     fn drop(&mut self) {
-        if let (Some(mut b), Some(pool)) = (self.buf.take(), self.pool.take()) {
+        if let (Some(b), Some(pool)) = (self.buf.take(), self.pool.take()) {
             // reset length to configured size for predictability
             // Note: we can't access buf_size here, so just push as-is.
             if let Ok(mut guard) = pool.lock() {
@@ -123,22 +123,38 @@ pub fn detect_system_ram_bytes() -> Result<u64> {
     Ok(kb * 1024)
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct MemoryPlan {
+    pub mode: MemoryMode,
+    pub threads: usize,
+    pub buffer_size: usize,
+    pub num_buffers: usize,
+    pub prefetch_listing: bool,
+}
+
+impl MemoryPlan {
+    pub fn total_buffer_bytes(&self) -> u64 {
+        (self.buffer_size as u64).saturating_mul(self.num_buffers as u64)
+    }
+}
+
 /// Recommend configuration (threads, buffer_size, num_buffers) based on RAM and MemoryMode.
-///
-/// - threads: target number of worker threads
-/// - buffer_size: size of each buffer in bytes
-/// - num_buffers: number of buffers to preallocate in the pool
-pub fn recommend_config(mode: MemoryMode) -> Result<(usize, usize, usize)> {
-    let ram = detect_system_ram_bytes().unwrap_or(2 * 1024 * 1024 * 1024); // default 2GB
+pub fn recommend_config(
+    mode: MemoryMode,
+    threads_override: Option<usize>,
+    max_ram_override: Option<u64>,
+) -> Result<MemoryPlan> {
+    let detected_ram = detect_system_ram_bytes().unwrap_or(2 * 1024 * 1024 * 1024);
+    let ram_budget = max_ram_override.unwrap_or(detected_ram).max(64 * 1024) as u128;
+
     // Determine number of logical CPUs available
     let cpus = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1);
 
     // base heuristics
-    let (threads, buf_size, buffers_per_thread) = match mode {
+    let (mut threads, buf_size, buffers_per_thread) = match mode {
         MemoryMode::Stream => {
-            // low memory usage
             let threads = std::cmp::max(1, cpus / 2);
             let buf_size = 64 * 1024; // 64KB
             let buffers_per_thread = 2;
@@ -151,27 +167,56 @@ pub fn recommend_config(mode: MemoryMode) -> Result<(usize, usize, usize)> {
             (threads, buf_size, buffers_per_thread)
         }
         MemoryMode::Booster => {
-            let threads = std::cmp::max(1, cpus * 2); // allow more concurrency; rayon will cap sensibly
+            let threads = std::cmp::max(1, cpus * 2);
             let buf_size = 1024 * 1024; // 1MB
             let buffers_per_thread = 6;
             (threads, buf_size, buffers_per_thread)
         }
     };
 
-    // Bound buffer usage so we don't exceed ~half system RAM for buffers
-    let desired_total_buffers = threads.saturating_mul(buffers_per_thread);
-    let desired_memory = (desired_total_buffers as u128) * (buf_size as u128);
-
-    let max_allowed = (ram as u128) / 2u128; // use up to 50% of RAM
-    let mut num_buffers = desired_total_buffers;
-    if desired_memory > max_allowed && desired_total_buffers > 0 {
-        // scale down proportionally
-        let scale = max_allowed as f64 / desired_memory as f64;
-        let scaled = ((desired_total_buffers as f64) * scale).floor() as usize;
-        num_buffers = std::cmp::max(1, scaled);
+    if let Some(t_override) = threads_override {
+        if t_override > 0 {
+            threads = t_override;
+        }
     }
 
-    Ok((threads, buf_size, num_buffers))
+    let desired_total_buffers = threads.saturating_mul(buffers_per_thread).max(1);
+    let desired_memory = (desired_total_buffers as u128) * (buf_size as u128);
+
+    let max_allowed = ram_budget.max(buf_size as u128);
+    let mut num_buffers = desired_total_buffers;
+    let mut scaled = false;
+    if desired_memory > max_allowed {
+        scaled = true;
+        let scale = max_allowed as f64 / desired_memory as f64;
+        let scaled_buffers = ((desired_total_buffers as f64) * scale).floor() as usize;
+        num_buffers = std::cmp::max(1, scaled_buffers);
+    }
+
+    if num_buffers < threads {
+        threads = num_buffers.max(1);
+    }
+
+    let prefetch_listing = !matches!(mode, MemoryMode::Stream);
+
+    let plan = MemoryPlan {
+        mode,
+        threads: threads.max(1),
+        buffer_size: buf_size,
+        num_buffers: num_buffers.max(1),
+        prefetch_listing,
+    };
+
+    if scaled {
+        warn!(
+            "memory plan scaled down due to budget (buffers {} -> {} totaling {:.2} MiB)",
+            desired_total_buffers,
+            plan.num_buffers,
+            plan.total_buffer_bytes() as f64 / (1024.0 * 1024.0)
+        );
+    }
+
+    Ok(plan)
 }
 
 #[cfg(test)]
@@ -180,10 +225,10 @@ mod tests {
 
     #[test]
     fn test_recommend_config_runs() {
-        let (t, bsz, nb) = recommend_config(MemoryMode::Balanced).unwrap();
-        assert!(t >= 1);
-        assert!(bsz >= 64 * 1024);
-        assert!(nb >= 1);
+        let plan = recommend_config(MemoryMode::Balanced, None, None).unwrap();
+        assert!(plan.threads >= 1);
+        assert!(plan.buffer_size >= 64 * 1024);
+        assert!(plan.num_buffers >= 1);
     }
 
     #[test]
@@ -191,7 +236,7 @@ mod tests {
         let pool = BufferPool::new(2, 1024);
         {
             let mut p1 = pool.get();
-            let mut p2 = pool.get();
+            let _p2 = pool.get();
             let s1 = p1.as_mut();
             if !s1.is_empty() {
                 s1[0] = 42;
@@ -201,5 +246,11 @@ mod tests {
         // after drops, we should be able to get buffers again
         let _ = pool.get();
         let _ = pool.get();
+    }
+    #[test]
+    fn plan_respects_max_ram() {
+        let plan = recommend_config(MemoryMode::Booster, None, Some(2 * 1024 * 1024)).unwrap();
+        assert!(plan.total_buffer_bytes() <= 2 * 1024 * 1024);
+        assert!(plan.num_buffers >= 1);
     }
 }

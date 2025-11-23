@@ -1,7 +1,7 @@
-use std::fs;
-use std::path::{Path, PathBuf};
 use anyhow::Result;
 use log::{info, warn};
+use std::fs;
+use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 /// Rename files under `path` according to a simple pattern.

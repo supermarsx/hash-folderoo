@@ -1,8 +1,8 @@
-use std::path::{Path, PathBuf};
-use std::fs::{self, File, OpenOptions};
-use std::io::Write;
 use anyhow::{Context, Result};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::path::Path;
 
 /// Atomically write bytes to `path`.
 /// Writes to a temporary file in the same directory and then renames it into place.
@@ -35,8 +35,7 @@ pub fn atomic_write(path: &Path, data: &[u8]) -> Result<()> {
 
     // On Windows rename fails if target exists — remove first if present
     if path.exists() {
-        fs::remove_file(path)
-            .with_context(|| format!("remove existing target file {:?}", path))?;
+        fs::remove_file(path).with_context(|| format!("remove existing target file {:?}", path))?;
     }
 
     fs::rename(&tmp_path, path)
@@ -67,6 +66,8 @@ pub struct MapEntry {
     pub path: String,
     pub hash: String,
     pub size: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mtime: Option<i64>,
 }
 
 /// Load a map from a JSON file. Accepts either:
@@ -78,19 +79,22 @@ pub fn load_map_from_json(path: &Path) -> Result<Vec<MapEntry>> {
 
     // Try object with entries first
     if let Some(entries) = v.get("entries") {
-        let entries_parsed: Vec<MapEntry> = serde_json::from_value(entries.clone()).context("deserialize entries")?;
+        let entries_parsed: Vec<MapEntry> =
+            serde_json::from_value(entries.clone()).context("deserialize entries")?;
         return Ok(entries_parsed);
     }
 
     // If top-level array
     if v.is_array() {
-        let entries_parsed: Vec<MapEntry> = serde_json::from_value(v).context("deserialize array")?;
+        let entries_parsed: Vec<MapEntry> =
+            serde_json::from_value(v).context("deserialize array")?;
         return Ok(entries_parsed);
     }
 
     // Try to deserialize into a wrapper that matches older formats
     // Fallback: attempt to deserialize whole file as Vec<MapEntry>
-    let entries_parsed: Vec<MapEntry> = serde_json::from_str(&s).context("deserialize as Vec<MapEntry>")?;
+    let entries_parsed: Vec<MapEntry> =
+        serde_json::from_str(&s).context("deserialize as Vec<MapEntry>")?;
     Ok(entries_parsed)
 }
 
@@ -109,15 +113,24 @@ pub fn load_map_from_csv(path: &Path) -> Result<Vec<MapEntry>> {
 mod tests {
     use super::*;
     use tempfile::tempdir;
-    use std::fs::write;
 
     #[test]
     fn roundtrip_json_array() {
         let dir = tempdir().unwrap();
         let p = dir.path().join("m.json");
         let v = vec![
-            MapEntry { path: "a".into(), hash: "h1".into(), size: 1 },
-            MapEntry { path: "b".into(), hash: "h2".into(), size: 2 },
+            MapEntry {
+                path: "a".into(),
+                hash: "h1".into(),
+                size: 1,
+                mtime: None,
+            },
+            MapEntry {
+                path: "b".into(),
+                hash: "h2".into(),
+                size: 2,
+                mtime: None,
+            },
         ];
         write_json(&p, &v).unwrap();
         let loaded = load_map_from_json(&p).unwrap();
@@ -129,8 +142,18 @@ mod tests {
         let dir = tempdir().unwrap();
         let p = dir.path().join("m.csv");
         let v = vec![
-            MapEntry { path: "a".into(), hash: "h1".into(), size: 1 },
-            MapEntry { path: "b".into(), hash: "h2".into(), size: 2 },
+            MapEntry {
+                path: "a".into(),
+                hash: "h1".into(),
+                size: 1,
+                mtime: None,
+            },
+            MapEntry {
+                path: "b".into(),
+                hash: "h2".into(),
+                size: 2,
+                mtime: None,
+            },
         ];
         write_csv(&p, &v).unwrap();
         let loaded = load_map_from_csv(&p).unwrap();

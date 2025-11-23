@@ -1,10 +1,18 @@
-use clap::{Parser, Subcommand, Args};
+use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 
 /// CLI definition for hash-folderoo
 #[derive(Parser, Debug)]
 #[command(name = "hash-folderoo", version = env!("CARGO_PKG_VERSION"), about = "Hash-based folder toolkit")]
 pub struct Cli {
+    /// Print supported algorithms and exit
+    #[arg(long = "alg-list", global = true)]
+    pub alg_list: bool,
+
+    /// Optional configuration file path (TOML/YAML/JSON)
+    #[arg(long, global = true)]
+    pub config: Option<PathBuf>,
+
     /// Subcommand to run
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -50,9 +58,29 @@ pub struct HashmapArgs {
     #[arg(long)]
     pub depth: Option<usize>,
 
+    /// Strip this prefix from recorded file paths
+    #[arg(long = "strip-prefix")]
+    pub strip_prefix: Option<PathBuf>,
+
+    /// XOF output length in bytes (only for algorithms that support it)
+    #[arg(long = "xof-length")]
+    pub xof_length: Option<usize>,
+
     /// Exclude patterns (can be given multiple times or comma-separated)
     #[arg(long, value_delimiter = ',')]
     pub exclude: Vec<String>,
+
+    /// Follow symbolic links when walking directories
+    #[arg(long = "follow-symlinks")]
+    pub follow_symlinks: bool,
+
+    /// Show a progress bar while hashing
+    #[arg(long = "progress")]
+    pub progress: bool,
+
+    /// Perform a dry-run (hash files but skip writing output)
+    #[arg(long = "dry-run")]
+    pub dry_run: bool,
 
     /// Suppress non-error output
     #[arg(long)]
@@ -65,6 +93,10 @@ pub struct HashmapArgs {
     /// Memory mode (e.g. auto, low, high)
     #[arg(long = "mem-mode")]
     pub mem_mode: Option<String>,
+
+    /// Maximum memory budget in bytes for hashing buffers
+    #[arg(long = "max-ram")]
+    pub max_ram: Option<u64>,
 }
 
 #[derive(Args, Debug)]
@@ -84,6 +116,10 @@ pub struct CompareArgs {
     /// Output format (json/csv)
     #[arg(long)]
     pub format: Option<String>,
+
+    /// Hash algorithm to use when hashing directories
+    #[arg(long, short('a'))]
+    pub algorithm: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -106,6 +142,18 @@ pub struct CopydiffArgs {
     /// Target path or file (used to generate a plan when --plan is not provided)
     #[arg(long)]
     pub target: Option<PathBuf>,
+
+    /// Hash algorithm to use when hashing directories
+    #[arg(long, short('a'))]
+    pub algorithm: Option<String>,
+
+    /// Conflict handling strategy (overwrite, skip, rename)
+    #[arg(long = "conflict", default_value = "overwrite")]
+    pub conflict: String,
+
+    /// Preserve file modification times when copying
+    #[arg(long = "preserve-times")]
+    pub preserve_times: bool,
 }
 
 #[derive(Args, Debug)]
@@ -117,6 +165,14 @@ pub struct RemovemptyArgs {
     /// Don't actually remove, just show what would be removed
     #[arg(long = "dry-run")]
     pub dry_run: bool,
+
+    /// Minimum depth (relative to root) before removal is allowed
+    #[arg(long = "min-empty-depth")]
+    pub min_empty_depth: Option<usize>,
+
+    /// Directory exclusion patterns
+    #[arg(long, value_delimiter = ',')]
+    pub exclude: Vec<String>,
 }
 
 #[derive(Args, Debug)]
@@ -154,4 +210,12 @@ pub struct ReportArgs {
     /// Output format (json/csv)
     #[arg(long)]
     pub format: Option<String>,
+
+    /// Sections to include (comma-separated: stats,duplicates,largest)
+    #[arg(long, value_delimiter = ',')]
+    pub include: Vec<String>,
+
+    /// Number of entries for top lists
+    #[arg(long = "top-n")]
+    pub top_n: Option<usize>,
 }

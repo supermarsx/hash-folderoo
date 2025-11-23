@@ -1,6 +1,8 @@
 use crate::hash::{AlgorithmInfo, HasherImpl};
-use anyhow::Result;
-use sha3::{Shake256, digest::{Update, ExtendableOutput, XofReader}};
+use sha3::{
+    digest::{ExtendableOutput, Update},
+    Shake256,
+};
 use std::io::Read;
 
 pub struct Shake256Hasher {
@@ -42,27 +44,18 @@ impl HasherImpl for Shake256Hasher {
         Box::new(Self::new())
     }
 
-    fn update_reader(&mut self, r: &mut dyn Read) -> Result<()> {
-        let mut buf = [0u8; 8192];
-        loop {
-            let n = r.read(&mut buf)?;
-            if n == 0 {
-                break;
-            }
-            self.hasher.update(&buf[..n]);
-        }
-        Ok(())
+    fn update(&mut self, data: &[u8]) {
+        self.hasher.update(data);
     }
 
     fn finalize_hex(&self, out_len: usize) -> String {
         // Clone hasher to avoid consuming original state when creating XOF reader
         let mut reader = {
-            let mut cloned = self.hasher.clone();
+            let cloned = self.hasher.clone();
             cloned.finalize_xof()
         };
         let mut out = vec![0u8; out_len];
-        use std::io::Read as _;
-        let _ = reader.read_exact(&mut out);
+        Read::read_exact(&mut reader, &mut out).unwrap();
         hex::encode(out)
     }
 }

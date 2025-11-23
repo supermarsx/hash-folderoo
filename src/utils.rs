@@ -1,6 +1,6 @@
-use thiserror::Error;
-use std::env;
 use indicatif::ProgressBar;
+use std::env;
+use thiserror::Error;
 
 /// Initialize logging (simple wrapper around env_logger)
 pub fn setup_logging() {

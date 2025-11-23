@@ -1,14 +1,19 @@
-use crate::hash::HasherImpl;
 use crate::algorithms::{Blake3Hasher, Shake256Hasher};
+use crate::hash::HasherImpl;
 
+#[derive(Clone, Copy)]
 pub enum Algorithm {
     Blake3,
     Shake256,
 }
 
 impl Algorithm {
+    pub fn all() -> &'static [Algorithm] {
+        &[Algorithm::Blake3, Algorithm::Shake256]
+    }
+
     pub fn list() -> Vec<&'static str> {
-        vec!["blake3", "shake256"]
+        Self::all().iter().map(|alg| alg.name()).collect()
     }
 
     pub fn from_str(name: &str) -> Option<Algorithm> {
@@ -23,6 +28,13 @@ impl Algorithm {
         match self {
             Algorithm::Blake3 => Blake3Hasher::new_boxed(),
             Algorithm::Shake256 => Shake256Hasher::new_boxed(),
+        }
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            Algorithm::Blake3 => "blake3",
+            Algorithm::Shake256 => "shake256",
         }
     }
 }

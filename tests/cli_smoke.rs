@@ -1,6 +1,6 @@
 use assert_cmd::prelude::*;
 use predicates::prelude::*;
-use std::fs::{create_dir_all, write, copy};
+use std::fs::{copy, create_dir_all, write};
 use std::process::Command;
 use tempfile::tempdir;
 
@@ -22,19 +22,43 @@ fn cli_smoke_suite() -> Result<(), Box<dyn std::error::Error>> {
     // 1) hashmap -> generate map1 and map2
     let map1 = dir.path().join("map1.json");
     Command::cargo_bin("hash-folderoo")?
-        .args(&["hashmap", "--path", src.to_str().unwrap(), "--output", map1.to_str().unwrap(), "--format", "json"])
+        .args(&[
+            "hashmap",
+            "--path",
+            src.to_str().unwrap(),
+            "--output",
+            map1.to_str().unwrap(),
+            "--format",
+            "json",
+        ])
         .assert()
         .success();
 
     let map2 = dir.path().join("map2.json");
     Command::cargo_bin("hash-folderoo")?
-        .args(&["hashmap", "--path", dst.to_str().unwrap(), "--output", map2.to_str().unwrap(), "--format", "json"])
+        .args(&[
+            "hashmap",
+            "--path",
+            dst.to_str().unwrap(),
+            "--output",
+            map2.to_str().unwrap(),
+            "--format",
+            "json",
+        ])
         .assert()
         .success();
 
     // 2) compare maps
     Command::cargo_bin("hash-folderoo")?
-        .args(&["compare", "--source", map1.to_str().unwrap(), "--target", map2.to_str().unwrap(), "--format", "json"])
+        .args(&[
+            "compare",
+            "--source",
+            map1.to_str().unwrap(),
+            "--target",
+            map2.to_str().unwrap(),
+            "--format",
+            "json",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains("\"changed\"").or(predicate::str::contains("changed")));
@@ -54,22 +78,42 @@ fn cli_smoke_suite() -> Result<(), Box<dyn std::error::Error>> {
 
     // 4) removempty dry-run (should succeed on existing dir)
     Command::cargo_bin("hash-folderoo")?
-        .args(&["removempty", "--path", dir.path().to_str().unwrap(), "--dry-run"])
+        .args(&[
+            "removempty",
+            "--path",
+            dir.path().to_str().unwrap(),
+            "--dry-run",
+        ])
         .assert()
         .success();
 
     // 5) renamer dry-run (pattern is arbitrary for smoke test)
     Command::cargo_bin("hash-folderoo")?
-        .args(&["renamer", "--path", dir.path().to_str().unwrap(), "--pattern", "x", "--dry-run"])
+        .args(&[
+            "renamer",
+            "--path",
+            dir.path().to_str().unwrap(),
+            "--pattern",
+            "x",
+            "--dry-run",
+        ])
         .assert()
         .success();
 
     // 6) report on generated map (json)
     Command::cargo_bin("hash-folderoo")?
-        .args(&["report", "--input", map1.to_str().unwrap(), "--format", "json"])
+        .args(&[
+            "report",
+            "--input",
+            map1.to_str().unwrap(),
+            "--format",
+            "json",
+        ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("\"total_files\"").or(predicate::str::contains("Total files")));
+        .stdout(
+            predicate::str::contains("\"total_files\"").or(predicate::str::contains("Total files")),
+        );
 
     // 7) benchmark basic run (small buffer)
     Command::cargo_bin("hash-folderoo")?

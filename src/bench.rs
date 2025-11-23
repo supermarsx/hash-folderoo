@@ -28,7 +28,11 @@ pub fn run_benchmark(algorithm: &str, size_mb: usize) -> Result<()> {
     let alg_enum = match Algorithm::from_str(algorithm) {
         Some(a) => a,
         None => {
-            println!("Unknown algorithm '{}', available: {:?}", algorithm, Algorithm::list());
+            println!(
+                "Unknown algorithm '{}', available: {:?}",
+                algorithm,
+                Algorithm::list()
+            );
             return Ok(());
         }
     };

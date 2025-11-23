@@ -1,5 +1,4 @@
 use crate::hash::{AlgorithmInfo, HasherImpl};
-use anyhow::Result;
 use blake3::{Hasher, OutputReader};
 use std::io::Read;
 
@@ -42,16 +41,8 @@ impl HasherImpl for Blake3Hasher {
         Box::new(Self::new())
     }
 
-    fn update_reader(&mut self, r: &mut dyn Read) -> Result<()> {
-        let mut buf = [0u8; 8192];
-        loop {
-            let n = r.read(&mut buf)?;
-            if n == 0 {
-                break;
-            }
-            self.hasher.update(&buf[..n]);
-        }
-        Ok(())
+    fn update(&mut self, data: &[u8]) {
+        self.hasher.update(data);
     }
 
     fn finalize_hex(&self, out_len: usize) -> String {
@@ -61,8 +52,7 @@ impl HasherImpl for Blake3Hasher {
         // XOF reader requires mutable reader; clone hasher state by re-finalizing
         // Note: blake3::Hasher::finalize_xof consumes &self; using finalize_xof above is fine
         // but OutputReader implements read
-        use std::io::Read as _;
-        let _ = reader.read_exact(&mut out);
+        Read::read_exact(&mut reader, &mut out).unwrap();
         hex::encode(out)
     }
 }
