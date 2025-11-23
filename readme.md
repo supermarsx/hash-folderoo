@@ -23,7 +23,7 @@ The original project started as an Electron desktop utility; this crate rebuilds
 | `report` | Summarize a hash map (stats, duplicates, largest files, etc.). | `--input`, `--format {json,text}`, `--include`, `--top-n` |
 | `benchmark` | Benchmark supported algorithms over an in-memory buffer. | `--algorithm {blake3,shake256,all}`, `--size <bytes>` |
 
-Run `cargo run -- --help` for global options and `cargo run -- <command> --help` for per-command flags. Use `--alg-list` to print the currently compiled hashing algorithms (BLAKE3, BLAKE2b, BLAKE2bp, SHAKE256, TurboSHAKE256, KangarooTwelve).
+Run `cargo run -- --help` for global options and `cargo run -- <command> --help` for per-command flags. Use `--alg-list` to print the currently compiled hashing algorithms (BLAKE3, BLAKE2b, BLAKE2bp, SHAKE256, TurboSHAKE256, ParallelHash256, KangarooTwelve).
 
 ## Installation
 
@@ -169,6 +169,16 @@ mode = "stream"      # stream | balanced | booster
 max_ram = 2147483648 # 2 GiB
 ```
 
+### Configuration keys
+
+| Section | Keys | Notes |
+| --- | --- | --- |
+| `[general]` | `path` (string), `output` (string), `format` (`json` or `csv`), `threads` (u32 > 0), `strip_prefix` (string), `depth` (u32 > 0), `exclude` (array of globs), `follow_symlinks` (bool), `progress` (bool), `dry_run` (bool) | Matches CLI flags for `hashmap`; invalid formats or zero-valued counts are rejected during config validation. |
+| `[algorithm]` | `name` (string), `xof_length` (bytes > 0) | `name` must map to a supported algorithm (`blake3`, `blake2b`, `blake2bp`, `shake256`, `turboshake256`, `k12`, …). |
+| `[memory]` | `mode` (`stream`, `balanced`, or `booster`), `max_ram` (bytes > 0) | Controls the buffer-plan recommender; invalid modes result in a startup error. |
+
+Configs loaded from `/etc`, `$XDG_CONFIG_HOME`, the project directory, env overrides, and `--config` all go through the same validator so mistakes are caught early.
+
 ### Supported environment variables
 
 | Variable | Meaning |
@@ -233,7 +243,7 @@ Use `--threads` and `--max-ram` to override the auto plan. The buffer pool enfor
 
 ## Roadmap
 
-The current binary ships with BLAKE3, BLAKE2b, BLAKE2bp, SHAKE256, TurboSHAKE256, and KangarooTwelve hashing backends plus the core CLI workflow. The design document (`spec.md`) covers upcoming work such as additional algorithms (ParallelHash, xxHash3, WyHash/MeowHash, etc.), richer booster-mode controls, persisted copy plans, and a GUI front-end. Contributions aligning with that plan are welcome - open an issue to discuss larger changes.
+The current binary ships with BLAKE3, BLAKE2b, BLAKE2bp, SHAKE256, TurboSHAKE256, ParallelHash256, and KangarooTwelve hashing backends plus the core CLI workflow. The design document (`spec.md`) covers upcoming work such as additional algorithms (xxHash3, WyHash/MeowHash, etc.), richer booster-mode controls, persisted copy plans, and a GUI front-end. Contributions aligning with that plan are welcome - open an issue to discuss larger changes.
 
 ## License
 

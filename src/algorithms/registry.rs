@@ -1,5 +1,6 @@
 use crate::algorithms::{
-    Blake2bHasher, Blake2bpHasher, Blake3Hasher, K12Hasher, Shake256Hasher, TurboShake256Hasher,
+    Blake2bHasher, Blake2bpHasher, Blake3Hasher, K12Hasher, ParallelHash256Hasher, Shake256Hasher,
+    TurboShake256Hasher,
 };
 use crate::hash::HasherImpl;
 
@@ -11,6 +12,7 @@ pub enum Algorithm {
     Shake256,
     K12,
     TurboShake256,
+    ParallelHash256,
 }
 
 impl Algorithm {
@@ -22,6 +24,7 @@ impl Algorithm {
             Algorithm::Shake256,
             Algorithm::K12,
             Algorithm::TurboShake256,
+            Algorithm::ParallelHash256,
         ]
     }
 
@@ -37,6 +40,7 @@ impl Algorithm {
             "shake256" => Some(Algorithm::Shake256),
             "k12" | "kangarootwelve" | "kangaroo12" => Some(Algorithm::K12),
             "turboshake" | "turboshake256" => Some(Algorithm::TurboShake256),
+            "parallelhash" | "parallelhash256" => Some(Algorithm::ParallelHash256),
             _ => None,
         }
     }
@@ -49,6 +53,7 @@ impl Algorithm {
             Algorithm::Shake256 => Shake256Hasher::new_boxed(),
             Algorithm::K12 => K12Hasher::new_boxed(),
             Algorithm::TurboShake256 => TurboShake256Hasher::new_boxed(),
+            Algorithm::ParallelHash256 => ParallelHash256Hasher::new_boxed(),
         }
     }
 
@@ -60,6 +65,7 @@ impl Algorithm {
             Algorithm::Shake256 => "shake256",
             Algorithm::K12 => "k12",
             Algorithm::TurboShake256 => "turboshake256",
+            Algorithm::ParallelHash256 => "parallelhash256",
         }
     }
 }

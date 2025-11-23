@@ -1,5 +1,6 @@
 use crate::algorithms::{
-    Blake2bHasher, Blake2bpHasher, Blake3Hasher, K12Hasher, Shake256Hasher,
+    Blake2bHasher, Blake2bpHasher, Blake3Hasher, K12Hasher, ParallelHash256Hasher,
+    Shake256Hasher, TurboShake256Hasher,
 };
 use crate::hash::HasherImpl;
 use std::io::Read;
@@ -10,6 +11,7 @@ mod tests {
     use blake2b_simd::{blake2bp, Params};
     use blake3;
     use sha3::{digest::{ExtendableOutput, Update}, Shake256};
+    use tiny_keccak::{IntoXof, ParallelHash, Xof};
     use tiny_keccak::{Hasher as TKHasher, KangarooTwelve};
     use turboshake::TurboShake256;
 
@@ -120,6 +122,25 @@ mod tests {
             let exp = hex::encode(out);
 
             assert_eq!(got, exp, "turboshake mismatch for input {:?}", inp);
+        }
+    }
+
+    #[test]
+    fn parallelhash_matches_direct() {
+        let inputs: &[&[u8]] = &[b"", b"hello", b"The quick brown fox"];
+        for &inp in inputs {
+            let mut h = ParallelHash256Hasher::new();
+            h.update_reader(&mut &inp[..]).unwrap();
+            let got = h.finalize_hex(64);
+
+            let mut ref_hasher = ParallelHash::v256(b"", 8192);
+            ref_hasher.update(inp);
+            let mut xof = ref_hasher.into_xof();
+            let mut out = vec![0u8; 64];
+            xof.squeeze(&mut out);
+            let exp = hex::encode(out);
+
+            assert_eq!(got, exp, "parallelhash mismatch for input {:?}", inp);
         }
     }
 }
