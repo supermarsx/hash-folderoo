@@ -21,8 +21,8 @@ fn cli_smoke_suite() -> Result<(), Box<dyn std::error::Error>> {
 
     // 1) hashmap -> generate map1 and map2
     let map1 = dir.path().join("map1.json");
-    Command::cargo_bin("hash-folderoo")?
-        .args(&[
+    Command::new(assert_cmd::cargo::cargo_bin!("hash-folderoo"))
+        .args([
             "hashmap",
             "--path",
             src.to_str().unwrap(),
@@ -35,8 +35,8 @@ fn cli_smoke_suite() -> Result<(), Box<dyn std::error::Error>> {
         .success();
 
     let map2 = dir.path().join("map2.json");
-    Command::cargo_bin("hash-folderoo")?
-        .args(&[
+    Command::new(assert_cmd::cargo::cargo_bin!("hash-folderoo"))
+        .args([
             "hashmap",
             "--path",
             dst.to_str().unwrap(),
@@ -49,8 +49,8 @@ fn cli_smoke_suite() -> Result<(), Box<dyn std::error::Error>> {
         .success();
 
     // 2) compare maps
-    Command::cargo_bin("hash-folderoo")?
-        .args(&[
+    Command::new(assert_cmd::cargo::cargo_bin!("hash-folderoo"))
+        .args([
             "compare",
             "--source",
             map1.to_str().unwrap(),
@@ -64,8 +64,8 @@ fn cli_smoke_suite() -> Result<(), Box<dyn std::error::Error>> {
         .stdout(predicate::str::contains("\"changed\"").or(predicate::str::contains("changed")));
 
     // 3) copydiff dry-run plan generation
-    Command::cargo_bin("hash-folderoo")?
-        .args(&[
+    Command::new(assert_cmd::cargo::cargo_bin!("hash-folderoo"))
+        .args([
             "copydiff",
             "--source",
             map1.to_str().unwrap(),
@@ -77,8 +77,8 @@ fn cli_smoke_suite() -> Result<(), Box<dyn std::error::Error>> {
         .success();
 
     // 4) removempty dry-run (should succeed on existing dir)
-    Command::cargo_bin("hash-folderoo")?
-        .args(&[
+    Command::new(assert_cmd::cargo::cargo_bin!("hash-folderoo"))
+        .args([
             "removempty",
             "--path",
             dir.path().to_str().unwrap(),
@@ -88,8 +88,8 @@ fn cli_smoke_suite() -> Result<(), Box<dyn std::error::Error>> {
         .success();
 
     // 5) renamer dry-run (pattern is arbitrary for smoke test)
-    Command::cargo_bin("hash-folderoo")?
-        .args(&[
+    Command::new(assert_cmd::cargo::cargo_bin!("hash-folderoo"))
+        .args([
             "renamer",
             "--path",
             dir.path().to_str().unwrap(),
@@ -116,8 +116,8 @@ fn cli_smoke_suite() -> Result<(), Box<dyn std::error::Error>> {
         );
 
     // 7) benchmark basic run (small buffer)
-    Command::cargo_bin("hash-folderoo")?
-        .args(&["benchmark", "--algorithm", "blake3", "--size", "1024"])
+    Command::new(assert_cmd::cargo::cargo_bin!("hash-folderoo"))
+        .args(["benchmark", "--algorithm", "blake3", "--size", "1024"])
         .assert()
         .success();
 

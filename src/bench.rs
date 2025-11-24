@@ -25,7 +25,7 @@ pub fn run_benchmark(algorithm: &str, size_mb: usize) -> Result<()> {
         return Ok(());
     }
 
-    let alg_enum = match Algorithm::from_str(algorithm) {
+    let alg_enum = match Algorithm::from_name(algorithm) {
         Some(a) => a,
         None => {
             println!(

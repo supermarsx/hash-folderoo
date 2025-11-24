@@ -85,6 +85,25 @@ jobs:
               echo "asset_file=${PWD}/${BINNAME}-${{ matrix.target }}.tar.gz" >> $GITHUB_OUTPUT
               ;;
           esac
+      - name: Generate checksum for asset
+        id: checksum
+        run: |
+          ASSET=${{ steps.pack.outputs.asset_file }}
+          if [ -f "${ASSET}" ]; then
+            case "${{ matrix.os }}" in
+              windows-latest)
+                # on windows runner use PowerShell
+                pwsh -Command "Get-FileHash -Algorithm SHA256 '${ASSET}' | ForEach-Object { \"$($_.Hash)  $(Split-Path -Leaf '${ASSET}')\" }" > ${ASSET}.sha256
+                ;;
+              *)
+                sha256sum "${ASSET}" > ${ASSET}.sha256
+                ;;
+            esac
+            echo "checksum_file=${ASSET}.sha256" >> $GITHUB_OUTPUT
+          else
+            echo "checksum_file=" >> $GITHUB_OUTPUT
+          fi
+
       - name: Upload release asset
         uses: actions/upload-release-asset@v1
         with:
@@ -97,4 +116,14 @@ jobs:
       - name: Debug list
         if: ${{ always() }}
         run: ls -la dist || true
+      - name: Upload checksum asset
+        if: steps.checksum.outputs.checksum_file != ''
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ needs.prepare.outputs.upload_url }}
+          asset_path: ${{ steps.checksum.outputs.checksum_file }}
+          asset_name: ${{ matrix.target }}-${{ needs.prepare.outputs.version }}.sha256
+          asset_content_type: text/plain
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # done

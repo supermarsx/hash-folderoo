@@ -17,12 +17,19 @@ pub enum ConflictStrategy {
 }
 
 impl ConflictStrategy {
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn from_name(s: &str) -> Option<Self> {
+        s.parse().ok()
+    }
+}
+
+impl std::str::FromStr for ConflictStrategy {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "overwrite" => Some(ConflictStrategy::Overwrite),
-            "skip" => Some(ConflictStrategy::Skip),
-            "rename" => Some(ConflictStrategy::Rename),
-            _ => None,
+            "overwrite" => Ok(ConflictStrategy::Overwrite),
+            "skip" => Ok(ConflictStrategy::Skip),
+            "rename" => Ok(ConflictStrategy::Rename),
+            _ => Err(()),
         }
     }
 }
@@ -66,6 +73,12 @@ impl CopyPlan {
             meta: None,
             ops: Vec::new(),
         }
+    }
+}
+
+impl Default for CopyPlan {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

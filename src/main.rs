@@ -183,7 +183,7 @@ fn main() -> anyhow::Result<()> {
                 info!("Computing hashmap for {} using alg {}", path, alg);
             }
 
-            let alg_enum = match Algorithm::from_str(alg) {
+            let alg_enum = match Algorithm::from_name(alg) {
                 Some(a) => a,
                 None => {
                     warn!("Unknown algorithm {}, falling back to blake3", alg);
@@ -207,7 +207,7 @@ fn main() -> anyhow::Result<()> {
                 .as_deref()
                 .or_else(|| runtime_cfg.memory.as_ref().and_then(|m| m.mode.as_deref()))
                 .unwrap_or("balanced");
-            let mode = MemoryMode::from_str(mem_mode_str);
+            let mode = MemoryMode::from_name(mem_mode_str);
 
             let threads_override = args
                 .threads
@@ -465,7 +465,7 @@ fn main() -> anyhow::Result<()> {
             let compare_alg = args
                 .algorithm
                 .as_deref()
-                .and_then(|name| Algorithm::from_str(name))
+                .and_then(Algorithm::from_name)
                 .unwrap_or_else(|| {
                     if let Some(name) = args.algorithm.as_deref() {
                         warn!(
@@ -480,7 +480,7 @@ fn main() -> anyhow::Result<()> {
                 // noop; format will be used below
             }
 
-            if !args.output.is_none() {
+            if args.output.is_some() {
                 // noop; output will be used below
             }
 
@@ -492,7 +492,7 @@ fn main() -> anyhow::Result<()> {
             let report = compare_mod::compare_maps(src_map, tgt_map);
 
             let format = args.format.as_deref().unwrap_or("json");
-            let out_path = args.output.as_ref().map(|p| p.as_path());
+            let out_path = args.output.as_deref();
 
             compare_mod::write_report(&report, out_path, format).map_err(|e| anyhow::anyhow!(e))?;
         }
@@ -501,7 +501,7 @@ fn main() -> anyhow::Result<()> {
             let copy_alg = args
                 .algorithm
                 .as_deref()
-                .and_then(|name| Algorithm::from_str(name))
+                .and_then(Algorithm::from_name)
                 .unwrap_or_else(|| {
                     if let Some(name) = args.algorithm.as_deref() {
                         warn!(
@@ -563,7 +563,7 @@ fn main() -> anyhow::Result<()> {
 
             if args.execute {
                 let conflict =
-                    copy::ConflictStrategy::from_str(&args.conflict).unwrap_or_else(|| {
+                    copy::ConflictStrategy::from_name(&args.conflict).unwrap_or_else(|| {
                         warn!(
                             "Unknown conflict mode {}; defaulting to overwrite",
                             args.conflict
@@ -600,10 +600,7 @@ fn main() -> anyhow::Result<()> {
                 .as_ref()
                 .map(|p| p.to_string_lossy().into_owned())
                 .ok_or_else(|| anyhow::anyhow!("--path is required"))?;
-            let pattern = args
-                .pattern
-                .as_ref()
-                .map(|s| s.as_str())
+            let pattern = args.pattern.as_deref()
                 .ok_or_else(|| anyhow::anyhow!("--pattern is required"))?;
             hash_folderoo::rename_files(std::path::Path::new(&path), pattern, args.dry_run)
                 .map_err(|e| anyhow::anyhow!("renamer error: {}", e))?;
@@ -615,8 +612,7 @@ fn main() -> anyhow::Result<()> {
             let size_mb = if size_bytes == 0 {
                 0
             } else {
-                // round up to nearest MB
-                (size_bytes + (1024 * 1024) - 1) / (1024 * 1024)
+                size_bytes.div_ceil(1024 * 1024)
             };
             hash_folderoo::run_benchmark(alg, size_mb).map_err(|e| anyhow::anyhow!(e))?;
         }

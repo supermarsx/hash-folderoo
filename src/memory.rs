@@ -12,11 +12,19 @@ pub enum MemoryMode {
 }
 
 impl MemoryMode {
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_name(s: &str) -> Self {
+        s.parse().unwrap_or(MemoryMode::Balanced)
+    }
+}
+
+impl std::str::FromStr for MemoryMode {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "stream" => MemoryMode::Stream,
-            "booster" => MemoryMode::Booster,
-            _ => MemoryMode::Balanced,
+            "stream" => Ok(MemoryMode::Stream),
+            "booster" => Ok(MemoryMode::Booster),
+            "balanced" => Ok(MemoryMode::Balanced),
+            _ => Err(()),
         }
     }
 }
@@ -91,13 +99,21 @@ impl PooledBuffer {
     }
 
     /// Get a mutable reference to the underlying buffer.
-    pub fn as_mut(&mut self) -> &mut [u8] {
+    ///
+    /// Named `as_mut_slice` to avoid colliding with `AsMut::as_mut` trait method.
+    pub fn as_mut_slice(&mut self) -> &mut [u8] {
         self.buf.as_mut().map(|b| &mut b[..]).unwrap_or(&mut [])
     }
 
     /// Get a shared slice.
     pub fn as_slice(&self) -> &[u8] {
         self.buf.as_ref().map(|b| &b[..]).unwrap_or(&[])
+    }
+}
+
+impl AsMut<[u8]> for PooledBuffer {
+    fn as_mut(&mut self) -> &mut [u8] {
+        self.buf.as_mut().map(|b| &mut b[..]).unwrap_or(&mut [])
     }
 }
 
@@ -237,7 +253,7 @@ mod tests {
         {
             let mut p1 = pool.get();
             let _p2 = pool.get();
-            let s1 = p1.as_mut();
+            let s1 = p1.as_mut_slice();
             if !s1.is_empty() {
                 s1[0] = 42;
             }

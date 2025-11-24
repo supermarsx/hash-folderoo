@@ -35,6 +35,12 @@ impl ComparisonReport {
     }
 }
 
+impl Default for ComparisonReport {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Load a map from either a file (json/csv) or by hashing a directory.
 /// `input` may be a path to a file (json/csv) or a directory.
 /// When hashing a directory the provided `algorithm` is used with balanced memory mode.
@@ -174,7 +180,7 @@ pub fn compare_maps(source: Vec<io::MapEntry>, target: Vec<io::MapEntry>) -> Com
                 }
             }
             if chosen.is_none() {
-                chosen = tgts.get(0).cloned();
+                chosen = tgts.first().cloned();
             }
             if let Some(te) = chosen {
                 // Only mark as moved if paths differ

@@ -1,0 +1,26 @@
+{
+  "version": "vSHORT",
+  "homepage": "https://github.com/supermarsx/hash-folderoo",
+  "description": "hash-folderoo — multi-command cross-platform folder hashing and diff toolkit",
+  "license": "MIT OR Apache-2.0",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/supermarsx/hash-folderoo/releases/download/vSHORT/hash-folderoo-x86_64-pc-windows-msvc-vSHORT.zip",
+      "bin": ["hash-folderoo.exe"],
+      "hash": "SHA256_PLACEHOLDER"
+    }
+  },
+  "checkver": {
+    "github": "supermarsx/hash-folderoo"
+  },
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/supermarsx/hash-folderoo/releases/download/{{version}}/hash-folderoo-x86_64-pc-windows-msvc-{{version}}.zip",
+        "hash": {
+          "url": "https://github.com/supermarsx/hash-folderoo/releases/download/{{version}}/hash-folderoo-x86_64-pc-windows-msvc-{{version}}.zip.sha256"
+        }
+      }
+    }
+  }
+}

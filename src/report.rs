@@ -167,7 +167,7 @@ pub fn generate_report(
             .extension()
             .and_then(|s| s.to_str())
             .map(|s| s.to_lowercase())
-            .unwrap_or_else(|| "".to_string());
+            .unwrap_or_default();
         *ext_counts.entry(ext).or_default() += 1;
     }
 

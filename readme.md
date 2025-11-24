@@ -82,6 +82,26 @@ Move-Item -Path .\dist\hash-folderoo.exe -Destination $HOME\bin\hash-folderoo.ex
 
 We recommend verifying checksums/signatures before installing. CI can be extended to generate checksums for each artifact and attach them to the release.
 
+Homebrew / Brew (macOS & Linuxbrew)
+
+If the project provides a Homebrew Tap (see `packaging/homebrew`) you can install directly with:
+
+```bash
+# tap repo and install (replace tap name if different)
+brew tap supermarsx/homebrew-tap
+brew install supermarsx/tap/hash-folderoo
+```
+
+Scoop (Windows)
+
+If the project provides a Scoop bucket (see `packaging/scoop`) you can install with:
+
+```powershell
+# add a bucket and install (example bucket URL)
+scoop bucket add hash-folderoo https://github.com/supermarsx/scoop-bucket
+scoop install hash-folderoo
+```
+
 ### Build from source (developer / optional)
 
 If you prefer to build locally (development or debugging), you can still use Cargo:
@@ -312,10 +332,19 @@ Notes:
 - GitHub runner capabilities determine whether every target can be built on the runners provided; cross-compilation is attempted via rust target tooling. If a specific target cannot be produced on a runner, the release workflow will fail for that matrix cell — this ensures each published artifact was actually built on a runner that produced it.
 - If you want to publish stable semver releases instead of short-sha releases, adapt `.github/workflows/release.yml` to trigger on tags (e.g., push tags) and set a semantic version.
 
+Packaging helpers
+
+This repo includes packaging templates to simplify adding distribution channels:
+
+- `packaging/scoop` - a template Scoop manifest and a `config/` README explaining how to wire an entry into a Scoop bucket (Windows user installer flow).
+- `packaging/homebrew` - a sample Homebrew formula and `config/` notes for publishing a tap (macOS & Linuxbrew).
+
+The release workflow generates SHA256 checksums (*.sha256) for each uploaded artifact so packaging manifests can be populated automatically with the correct checksum values.
+
 ## Roadmap
 
 The current binary ships with BLAKE3, BLAKE2b, BLAKE2bp, SHAKE256, TurboSHAKE256, ParallelHash256, XXH3-1024, WyHash-1024, and KangarooTwelve hashing backends plus the core CLI workflow. The design document (`spec.md`) covers upcoming work such as additional algorithms (MeowHash, etc.), richer booster-mode controls, persisted copy plans, and a GUI front-end. Contributions aligning with that plan are welcome - open an issue to discuss larger changes.
 
 ## License
 
-No license has been declared yet. Please add an explicit license (e.g., MIT/Apache-2.0) before distributing binaries outside this repository.
+This project declares a dual license in `Cargo.toml`: **MIT OR Apache-2.0**. Choose the license that best fits your needs and consult the repository owner for any redistribution policies.

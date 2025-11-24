@@ -36,19 +36,8 @@ impl Algorithm {
         Self::all().iter().map(|alg| alg.name()).collect()
     }
 
-    pub fn from_str(name: &str) -> Option<Algorithm> {
-        match name.to_lowercase().as_str() {
-            "blake2b" | "blake2b-512" => Some(Algorithm::Blake2b),
-            "blake2bp" => Some(Algorithm::Blake2bp),
-            "blake3" => Some(Algorithm::Blake3),
-            "shake256" => Some(Algorithm::Shake256),
-            "k12" | "kangarootwelve" | "kangaroo12" => Some(Algorithm::K12),
-            "turboshake" | "turboshake256" => Some(Algorithm::TurboShake256),
-            "parallelhash" | "parallelhash256" => Some(Algorithm::ParallelHash256),
-            "xxh3" | "xxh3-1024" => Some(Algorithm::Xxh3_1024),
-            "wyhash" | "wyhash-1024" => Some(Algorithm::Wyhash1024),
-            _ => None,
-        }
+    pub fn from_name(name: &str) -> Option<Algorithm> {
+        name.parse().ok()
     }
 
     pub fn create(&self) -> Box<dyn HasherImpl> {
@@ -76,6 +65,24 @@ impl Algorithm {
             Algorithm::ParallelHash256 => "parallelhash256",
             Algorithm::Xxh3_1024 => "xxh3-1024",
             Algorithm::Wyhash1024 => "wyhash-1024",
+        }
+    }
+}
+
+impl std::str::FromStr for Algorithm {
+    type Err = ();
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        match name.to_lowercase().as_str() {
+            "blake2b" | "blake2b-512" => Ok(Algorithm::Blake2b),
+            "blake2bp" => Ok(Algorithm::Blake2bp),
+            "blake3" => Ok(Algorithm::Blake3),
+            "shake256" => Ok(Algorithm::Shake256),
+            "k12" | "kangarootwelve" | "kangaroo12" => Ok(Algorithm::K12),
+            "turboshake" | "turboshake256" => Ok(Algorithm::TurboShake256),
+            "parallelhash" | "parallelhash256" => Ok(Algorithm::ParallelHash256),
+            "xxh3" | "xxh3-1024" => Ok(Algorithm::Xxh3_1024),
+            "wyhash" | "wyhash-1024" => Ok(Algorithm::Wyhash1024),
+            _ => Err(()),
         }
     }
 }

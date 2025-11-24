@@ -48,8 +48,8 @@ impl Iterator for WalkStream {
     type Item = PathBuf;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(entry) = self.walker.next() {
-            match entry {
+            for entry in self.walker.by_ref() {
+                match entry {
                 Ok(e) => {
                     if !e.file_type().is_file() {
                         continue;
