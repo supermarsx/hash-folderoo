@@ -126,4 +126,120 @@ jobs:
           asset_content_type: text/plain
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload workflow artifact (dist)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}-${{ needs.prepare.outputs.version }}
+          path: dist/**
       # done
+
+  finalize:
+    needs: [prepare, build-and-upload]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Aggregate SHA256 checksums
+        id: aggregate
+        run: |
+          cd artifacts || exit 0
+          # Find all .sha256 files and concatenate into checksums.txt
+          find . -type f -name '*.sha256' -exec cat {} \; > SHA256SUMS.txt || true
+          echo "checksum_file=artifacts/SHA256SUMS.txt" >> $GITHUB_OUTPUT
+
+      - name: Upload aggregated checksums to release
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ needs.prepare.outputs.upload_url }}
+          asset_path: ${{ steps.aggregate.outputs.checksum_file }}
+          asset_name: SHA256SUMS-${{ needs.prepare.outputs.version }}.txt
+          asset_content_type: text/plain
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout repo for packaging updates
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Prepare packaging files
+        id: prep
+        run: |
+          VERSION=${{ needs.prepare.outputs.version }}
+          echo "version=${VERSION}" > version.out
+          # read checksums into variables
+          cd artifacts || exit 0
+          # Normalize file names
+          find . -type f -name '*.sha256' -print0 | while IFS= read -r -d '' f; do
+            # file content like: <hash>  filename
+            HASH=$(awk '{print $1}' "$f")
+            FNAME=$(awk '{print $2}' "$f")
+            case "$FNAME" in
+              *x86_64-pc-windows-msvc*.zip)
+                echo "SHA256_WINDOWS_X86_64=$HASH" >> ../version.out
+                ;;
+              *aarch64-pc-windows-msvc*.zip)
+                echo "SHA256_WINDOWS_AARCH64=$HASH" >> ../version.out
+                ;;
+              *x86_64-apple-darwin*.tar.gz)
+                echo "SHA256_MACOS_X86_64=$HASH" >> ../version.out
+                ;;
+              *aarch64-apple-darwin*.tar.gz)
+                echo "SHA256_MACOS_AARCH64=$HASH" >> ../version.out
+                ;;
+              *x86_64-unknown-linux-gnu*.tar.gz)
+                echo "SHA256_LINUX_X86_64=$HASH" >> ../version.out
+                ;;
+              *aarch64-unknown-linux-gnu*.tar.gz)
+                echo "SHA256_LINUX_AARCH64=$HASH" >> ../version.out
+                ;;
+              *)
+                echo "UNKNOWN:$FNAME -> $HASH" >> ../version.out
+                ;;
+            esac
+          done
+
+      - name: Update packaging templates
+        run: |
+          set -e
+          VERSION=$(cat version.out | sed -n 's/^version=//p')
+          SHA_WIN_X86=$(cat version.out | sed -n 's/^SHA256_WINDOWS_X86_64=//p')
+          SHA_WIN_AA=$(cat version.out | sed -n 's/^SHA256_WINDOWS_AARCH64=//p')
+          SHA_MAC_X86=$(cat version.out | sed -n 's/^SHA256_MACOS_X86_64=//p')
+          SHA_MAC_AA=$(cat version.out | sed -n 's/^SHA256_MACOS_AARCH64=//p')
+          SHA_LIN_X86=$(cat version.out | sed -n 's/^SHA256_LINUX_X86_64=//p')
+          SHA_LIN_AA=$(cat version.out | sed -n 's/^SHA256_LINUX_AARCH64=//p')
+
+          # Update scoop manifest
+          jq --arg ver "${VERSION}" --arg sha "${SHA_WIN_X86}" '.version = $ver | .architecture["64bit"].hash = $sha | .architecture["64bit"].url |= sub("vSHORT"; $ver)' packaging/scoop/manifest.json > /tmp/manifest.json
+          mv /tmp/manifest.json packaging/scoop/manifest.json
+
+          # Update homebrew formula template in-place
+          sed -i "s/vSHORT/${VERSION}/g" packaging/homebrew/hash-folderoo.rb
+          sed -i "s/SHA256_PLACEHOLDER_MACOS_X86_64/${SHA_MAC_X86:-SHA256_PLACEHOLDER}/g" packaging/homebrew/hash-folderoo.rb
+          sed -i "s/SHA256_PLACEHOLDER_MACOS_AARCH64/${SHA_MAC_AA:-SHA256_PLACEHOLDER}/g" packaging/homebrew/hash-folderoo.rb
+          sed -i "s/SHA256_PLACEHOLDER_LINUX_AARCH64/${SHA_LIN_AA:-SHA256_PLACEHOLDER}/g" packaging/homebrew/hash-folderoo.rb
+          sed -i "s/SHA256_PLACEHOLDER_LINUX_X86_64/${SHA_LIN_X86:-SHA256_PLACEHOLDER}/g" packaging/homebrew/hash-folderoo.rb
+
+      - name: Commit updated packaging files
+        run: |
+          BRANCH=release-manifests-${{ needs.prepare.outputs.version }}
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b ${BRANCH}
+          git add packaging/homebrew/hash-folderoo.rb packaging/scoop/manifest.json
+          git commit -m "chore(packaging): update manifests for ${{ needs.prepare.outputs.version }}"
+          git push --set-upstream origin ${BRANCH}
+
+      - name: Create pull request for packaging updates
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore(packaging): update manifests for ${{ needs.prepare.outputs.version }}"
+          branch: release-manifests-${{ needs.prepare.outputs.version }}
+          title: "chore(packaging): update manifests for ${{ needs.prepare.outputs.version }}"
+          body: "This PR updates the packaging templates (Homebrew & Scoop) for release ${{ needs.prepare.outputs.version }}. Review and merge to publish to taps/buckets."

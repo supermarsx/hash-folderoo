@@ -1,6 +1,12 @@
 # Homebrew packaging config
 
-This folder contains a sample Homebrew formula template (`hash-folderoo.rb`) that can be published in a Homebrew Tap. Replace `vSHORT` and `SHA256_PLACEHOLDER` with the release version and checksum produced by CI.
+This folder contains a sample Homebrew formula template (`hash-folderoo.rb`) that can be published in a Homebrew Tap. During automated release we populate the following placeholders with the release tag and checksums:
+
+- `vSHORT` - release tag/version (for example `v1a2b3c4`)
+- `SHA256_PLACEHOLDER_MACOS_X86_64` - checksum for macOS x86_64 artifact
+- `SHA256_PLACEHOLDER_MACOS_AARCH64` - checksum for macOS arm64 artifact
+- `SHA256_PLACEHOLDER_LINUX_X86_64` - checksum for linux x86_64 artifact
+- `SHA256_PLACEHOLDER_LINUX_AARCH64` - checksum for linux arm64 artifact
 
 Suggested tap name: `supermarsx/homebrew-tap` with the formula path `Formula/hash-folderoo.rb`.
 

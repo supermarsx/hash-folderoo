@@ -7,7 +7,7 @@
     "64bit": {
       "url": "https://github.com/supermarsx/hash-folderoo/releases/download/vSHORT/hash-folderoo-x86_64-pc-windows-msvc-vSHORT.zip",
       "bin": ["hash-folderoo.exe"],
-      "hash": "SHA256_PLACEHOLDER"
+      "hash": "SHA256_PLACEHOLDER_WINDOWS_X86_64"
     }
   },
   "checkver": {

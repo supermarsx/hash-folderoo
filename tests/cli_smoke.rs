@@ -101,8 +101,8 @@ fn cli_smoke_suite() -> Result<(), Box<dyn std::error::Error>> {
         .success();
 
     // 6) report on generated map (json)
-    Command::cargo_bin("hash-folderoo")?
-        .args(&[
+    Command::new(assert_cmd::cargo::cargo_bin!("hash-folderoo"))
+        .args([
             "report",
             "--input",
             map1.to_str().unwrap(),
@@ -111,9 +111,7 @@ fn cli_smoke_suite() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .assert()
         .success()
-        .stdout(
-            predicate::str::contains("\"total_files\"").or(predicate::str::contains("Total files")),
-        );
+        .stdout(predicate::str::contains("\"total_files\"").or(predicate::str::contains("Total files")));
 
     // 7) benchmark basic run (small buffer)
     Command::new(assert_cmd::cargo::cargo_bin!("hash-folderoo"))

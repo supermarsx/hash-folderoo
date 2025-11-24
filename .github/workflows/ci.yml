@@ -31,10 +31,9 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-      - name: Run clippy
+      - name: Run clippy (deny warnings)
         run: |
-          # Run clippy to surface issues; do not fail the CI on warnings yet.
-          cargo clippy --all-targets || true
+          cargo clippy --all-targets -- -D warnings
 
   tests:
     name: Run tests

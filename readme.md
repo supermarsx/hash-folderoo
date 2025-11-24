@@ -334,12 +334,12 @@ Notes:
 
 Packaging helpers
 
-This repo includes packaging templates to simplify adding distribution channels:
+This repo includes packaging templates to simplify adding distribution channels and CI automation for them:
 
 - `packaging/scoop` - a template Scoop manifest and a `config/` README explaining how to wire an entry into a Scoop bucket (Windows user installer flow).
 - `packaging/homebrew` - a sample Homebrew formula and `config/` notes for publishing a tap (macOS & Linuxbrew).
 
-The release workflow generates SHA256 checksums (*.sha256) for each uploaded artifact so packaging manifests can be populated automatically with the correct checksum values.
+The release workflow generates SHA256 checksums (*.sha256) for each uploaded artifact and an aggregated SHA256SUMS file for the release so packaging manifests can be populated automatically with the correct checksum values. The workflow will also create a branch in this repository containing updated packaging manifests (Homebrew & Scoop) with concrete versions and checksums and open a pull request so you can review and merge them (or adapt the workflow to push directly to your taps/buckets).
 
 ## Roadmap
 
