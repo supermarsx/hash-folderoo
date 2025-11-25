@@ -48,6 +48,19 @@ pub struct CopyOp {
     pub op: String,
     #[serde(default)]
     pub done: bool,
+    /// Optional status field to support resumable plans. When absent older plans
+    /// using `done` will still be honored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<CopyStatus>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CopyStatus {
+    Pending,
+    InProgress,
+    Done,
+    Failed,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -109,6 +122,7 @@ pub fn generate_copy_plan(
             dst: t.path.clone(),
             op: "copy".into(),
             done: false,
+            status: None,
         });
     }
 
@@ -119,6 +133,7 @@ pub fn generate_copy_plan(
             dst: t.path.clone(),
             op: "copy".into(),
             done: false,
+            status: None,
         });
     }
 
@@ -144,6 +159,7 @@ pub fn generate_copy_plan(
             dst: dst_str,
             op: "copy".into(),
             done: false,
+            status: None,
         });
     }
 
@@ -197,22 +213,31 @@ pub fn execute_copy_plan(
     persist_path: Option<&Path>,
     git_diff: bool,
     include_patch: bool,
+    context: usize,
     git_diff_output: Option<&Path>,
 ) -> Result<()> {
     for i in 0..plan.ops.len() {
         // take a short-lived mutable borrow for the current op
-        if plan.ops[i].done {
+        if plan.ops[i].done || plan.ops[i].status == Some(CopyStatus::Done) {
             println!(
                 "Skipping completed op {} -> {}",
                 plan.ops[i].src, plan.ops[i].dst
             );
             continue;
         }
-        let src = Path::new(&plan.ops[i].src);
-        let dst = Path::new(&plan.ops[i].dst);
+        // clone path strings to avoid holding immutable borrows while we mutate status
+        let src_str = plan.ops[i].src.clone();
+        let dst_str = plan.ops[i].dst.clone();
+        let src = Path::new(&src_str);
+        let dst = Path::new(&dst_str);
 
         // Ensure source exists
         if !src.exists() {
+            // mark failed and persist (if requested) so user can inspect and resume later
+            plan.ops[i].status = Some(CopyStatus::Failed);
+            if let Some(path) = persist_path {
+                write_plan(path, plan)?;
+            }
             anyhow::bail!("source file does not exist: {}", src.display());
         }
 
@@ -226,12 +251,24 @@ pub fn execute_copy_plan(
             None => continue,
         };
 
+        // mark in-progress and persist immediately (if requested)
+        plan.ops[i].status = Some(CopyStatus::InProgress);
+        if let Some(path) = persist_path {
+            write_plan(path, plan)?;
+        }
+
         // perform copy
-        fs::copy(src, &target_path)
-            .with_context(|| format!("copy {:?} -> {:?}", src, target_path))?;
+        if let Err(e) = fs::copy(src, &target_path).with_context(|| format!("copy {:?} -> {:?}", src, target_path)) {
+            // store failed status and persist before returning
+            plan.ops[i].status = Some(CopyStatus::Failed);
+            if let Some(path) = persist_path {
+                write_plan(path, plan)?;
+            }
+            return Err(e);
+        }
 
         if git_diff {
-            let diff = crate::diff::format_copy_diff(src, &target_path, !dst.exists(), None, include_patch);
+            let diff = crate::diff::format_copy_diff(src, &target_path, !dst.exists(), None, include_patch, context);
             if let Some(out_path) = git_diff_output {
                 // append to file
                 if let Err(e) = std::fs::OpenOptions::new()
@@ -276,6 +313,7 @@ pub fn execute_copy_plan(
             }
         }
         plan.ops[i].done = true;
+        plan.ops[i].status = Some(CopyStatus::Done);
         if let Some(path) = persist_path {
             // mutable borrow ended here; safe to write the plan
             write_plan(path, plan)?;
@@ -285,7 +323,7 @@ pub fn execute_copy_plan(
 }
 
 /// Print what would be done for a given plan.
-pub fn dry_run_copy_plan(plan: &CopyPlan, git_diff: bool, include_patch: bool, git_diff_output: Option<&Path>) {
+pub fn dry_run_copy_plan(plan: &CopyPlan, git_diff: bool, include_patch: bool, context: usize, git_diff_output: Option<&Path>) {
     if let Some(meta) = &plan.meta {
         println!("Plan generated at {}", meta.generated_at);
         if let Some(src) = &meta.source_root {
@@ -304,7 +342,7 @@ pub fn dry_run_copy_plan(plan: &CopyPlan, git_diff: bool, include_patch: bool, g
             let src = std::path::Path::new(&op.src);
             let dst = std::path::Path::new(&op.dst);
             let new_file = !dst.exists();
-                    let diff = crate::diff::format_copy_diff(src, dst, new_file, None, include_patch);
+                    let diff = crate::diff::format_copy_diff(src, dst, new_file, None, include_patch, context);
                     if let Some(out_path) = git_diff_output {
                         if let Err(e) = std::fs::OpenOptions::new()
                             .create(true)
@@ -379,6 +417,7 @@ mod tests {
             dst: dst_file.to_string_lossy().into_owned(),
             op: "copy".into(),
             done: false,
+            status: None,
         });
 
         // Skip strategy should keep original
@@ -386,7 +425,7 @@ mod tests {
             conflict: ConflictStrategy::Skip,
             preserve_times: false,
         };
-        execute_copy_plan(&mut plan, opts, None, false, false, None).unwrap();
+        execute_copy_plan(&mut plan, opts, None, false, false, 3, None).unwrap();
         let contents = fs::read(&dst_file).unwrap();
         assert_eq!(&contents, b"existing");
 
@@ -395,10 +434,54 @@ mod tests {
             conflict: ConflictStrategy::Rename,
             preserve_times: false,
         };
-        execute_copy_plan(&mut plan, opts, None, false, false, None).unwrap();
+        execute_copy_plan(&mut plan, opts, None, false, false, 3, None).unwrap();
         let renamed = dst_dir.join("file-copy1.txt");
         assert!(renamed.exists());
         let new_contents = fs::read(renamed).unwrap();
         assert_eq!(&new_contents, b"hello");
+    }
+
+    #[test]
+    fn execute_copy_plan_persists_status_and_resume() {
+        let dir = tempdir().unwrap();
+        let src_dir = dir.path().join("src");
+        let dst_dir = dir.path().join("dst");
+        fs::create_dir_all(&src_dir).unwrap();
+        fs::create_dir_all(&dst_dir).unwrap();
+
+        let src_file = src_dir.join("file.txt");
+        fs::write(&src_file, b"hello").unwrap();
+
+        let plan_path = dir.path().join("plan.json");
+        let mut plan = CopyPlan::new();
+        plan.meta = Some(PlanMetadata {
+            version: 1,
+            generated_at: Utc::now().to_rfc3339(),
+            source_root: None,
+            target_root: None,
+        });
+        plan.ops.push(CopyOp {
+            src: src_file.to_string_lossy().into_owned(),
+            dst: dst_dir.join("file.txt").to_string_lossy().into_owned(),
+            op: "copy".into(),
+            done: false,
+            status: None,
+        });
+
+        // persist initial plan
+        write_plan(&plan_path, &plan).unwrap();
+
+        let opts = CopyOptions {
+            conflict: ConflictStrategy::Overwrite,
+            preserve_times: false,
+        };
+
+        // execute with persist_path should update status and done flags
+        let mut loaded = plan;
+        execute_copy_plan(&mut loaded, opts, Some(&plan_path), false, false, 3, None).unwrap();
+
+        // read back persisted file
+        let s = std::fs::read_to_string(&plan_path).unwrap();
+        assert!(s.contains("\"status\": \"done\"") || s.contains("\"done\": true"));
     }
 }

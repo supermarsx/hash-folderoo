@@ -583,18 +583,22 @@ fn main() -> anyhow::Result<()> {
                     conflict,
                     preserve_times: args.preserve_times,
                 };
+                // when resuming we persist updates back to the plan file so progress is maintained
+                let persist_path = if args.resume { args.plan.as_deref() } else { None };
+
                 copy::execute_copy_plan(
                     &mut plan,
                     opts,
-                    None,
+                    persist_path,
                     args.git_diff,
                     args.git_diff_body,
+                    args.git_diff_context,
                     args.git_diff_output.as_deref(),
                 )
                     .map_err(|e| anyhow::anyhow!(e))?;
             } else {
                 // default to dry-run output
-                copy::dry_run_copy_plan(&plan, args.git_diff, args.git_diff_body, args.git_diff_output.as_deref());
+                copy::dry_run_copy_plan(&plan, args.git_diff, args.git_diff_body, args.git_diff_context, args.git_diff_output.as_deref());
             }
         }
         Some(hash_folderoo::cli::Commands::Removempty(args)) => {
@@ -610,6 +614,7 @@ fn main() -> anyhow::Result<()> {
                 &args.exclude,
                 args.git_diff,
                 args.git_diff_body,
+                args.git_diff_context,
                 args.git_diff_output.as_deref(),
             )
             .map_err(|e| anyhow::anyhow!("removempty error: {}", e))?;
@@ -639,6 +644,7 @@ fn main() -> anyhow::Result<()> {
                 args.dry_run,
                 args.git_diff,
                 args.git_diff_body,
+                args.git_diff_context,
                 args.git_diff_output.as_deref(),
             )
             .map_err(|e| anyhow::anyhow!("renamer error: {}", e))?;

@@ -15,6 +15,7 @@ pub fn remove_empty_directories(
     excludes: &[String],
     git_diff: bool,
     git_diff_body: bool,
+    git_diff_context: usize,
     git_diff_output: Option<&Path>,
 ) -> Result<()> {
     if !path.exists() {
@@ -44,6 +45,7 @@ pub fn remove_empty_directories(
         dry_run: bool,
         git_diff: bool,
         git_diff_body: bool,
+        git_diff_context: usize,
         git_diff_output: Option<&Path>,
         root: &Path,
         depth: usize,
@@ -60,6 +62,7 @@ pub fn remove_empty_directories(
                     dry_run,
                     git_diff,
                     git_diff_body,
+                    git_diff_context,
                     git_diff_output,
                     root,
                     depth + 1,
@@ -129,7 +132,7 @@ pub fn remove_empty_directories(
     }
 
     // start recursion
-    helper(path, dry_run, git_diff, git_diff_body, git_diff_output, &root, 0, min_allowed, &globset)?;
+    helper(path, dry_run, git_diff, git_diff_body, git_diff_context, git_diff_output, &root, 0, min_allowed, &globset)?;
     Ok(())
 }
 
@@ -147,7 +150,7 @@ mod tests {
         create_dir_all(root.join("keep")).unwrap();
         create_dir_all(root.join("top_empty")).unwrap();
         File::create(root.join("keep").join("file.txt")).unwrap();
-        remove_empty_directories(&root, false, Some(2), &["keep/**".to_string()], false, false, None).unwrap();
+        remove_empty_directories(&root, false, Some(2), &["keep/**".to_string()], false, false, 3, None).unwrap();
         assert!(root.join("a").exists());
         assert!(!root.join("a").join("b").exists());
         assert!(root.join("keep").exists());

@@ -144,9 +144,15 @@ pub struct CopydiffArgs {
     /// When showing a dry-run or run summary, emit a git-style diff for each planned operation
     #[arg(long = "git-diff")]
     pub git_diff: bool,
+    /// Resume from a previously saved plan (reads a plan file provided with --plan)
+    #[arg(long = "resume")]
+    pub resume: bool,
     /// Include file content hunks in the git-diff output (unified-like)
     #[arg(long = "git-diff-body")]
     pub git_diff_body: bool,
+    /// Number of context lines to include around each hunk in `--git-diff-body`
+    #[arg(long = "git-diff-context", default_value_t = 3)]
+    pub git_diff_context: usize,
     /// Write git-diff output to a file instead of stdout
     #[arg(long = "git-diff-output")]
     pub git_diff_output: Option<PathBuf>,
@@ -194,6 +200,9 @@ pub struct RemovemptyArgs {
     /// Include file content hunks in the git-diff output (unified-like)
     #[arg(long = "git-diff-body")]
     pub git_diff_body: bool,
+    /// Number of context lines to include around each hunk in `--git-diff-body`
+    #[arg(long = "git-diff-context", default_value_t = 3)]
+    pub git_diff_context: usize,
     /// Write git-diff output to a file instead of stdout
     #[arg(long = "git-diff-output")]
     pub git_diff_output: Option<PathBuf>,
@@ -227,6 +236,9 @@ pub struct RenamerArgs {
     /// Include file content hunks in the git-diff output (unified-like)
     #[arg(long = "git-diff-body")]
     pub git_diff_body: bool,
+    /// Number of context lines to include around each hunk in `--git-diff-body`
+    #[arg(long = "git-diff-context", default_value_t = 3)]
+    pub git_diff_context: usize,
     /// Write git-diff output to a file instead of stdout
     #[arg(long = "git-diff-output")]
     pub git_diff_output: Option<PathBuf>,

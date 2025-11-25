@@ -57,6 +57,25 @@ jobs:
       - name: Run git-diff smoke tests (explicit)
         run: cargo test --test cli_dry_git_diff -- --nocapture
 
+  smoke:
+    name: Smoke tests across OS matrix
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Run CLI smoke tests (git-diff + resume)
+        run: |
+          set -e
+          cargo test --test cli_dry_git_diff -- --nocapture
+          cargo test --test cli_resume_plan -- --nocapture
+
   build:
     name: Cross build matrix
     runs-on: ${{ matrix.os }}
