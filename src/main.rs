@@ -583,11 +583,18 @@ fn main() -> anyhow::Result<()> {
                     conflict,
                     preserve_times: args.preserve_times,
                 };
-                copy::execute_copy_plan(&mut plan, opts, None, args.git_diff)
+                copy::execute_copy_plan(
+                    &mut plan,
+                    opts,
+                    None,
+                    args.git_diff,
+                    args.git_diff_body,
+                    args.git_diff_output.as_deref(),
+                )
                     .map_err(|e| anyhow::anyhow!(e))?;
             } else {
                 // default to dry-run output
-                copy::dry_run_copy_plan(&plan, args.git_diff);
+                copy::dry_run_copy_plan(&plan, args.git_diff, args.git_diff_body, args.git_diff_output.as_deref());
             }
         }
         Some(hash_folderoo::cli::Commands::Removempty(args)) => {
@@ -602,6 +609,8 @@ fn main() -> anyhow::Result<()> {
                 args.min_empty_depth,
                 &args.exclude,
                 args.git_diff,
+                args.git_diff_body,
+                args.git_diff_output.as_deref(),
             )
             .map_err(|e| anyhow::anyhow!("removempty error: {}", e))?;
         }
@@ -629,6 +638,8 @@ fn main() -> anyhow::Result<()> {
                 args.regex,
                 args.dry_run,
                 args.git_diff,
+                args.git_diff_body,
+                args.git_diff_output.as_deref(),
             )
             .map_err(|e| anyhow::anyhow!("renamer error: {}", e))?;
         }

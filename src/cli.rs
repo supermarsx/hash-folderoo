@@ -144,6 +144,12 @@ pub struct CopydiffArgs {
     /// When showing a dry-run or run summary, emit a git-style diff for each planned operation
     #[arg(long = "git-diff")]
     pub git_diff: bool,
+    /// Include file content hunks in the git-diff output (unified-like)
+    #[arg(long = "git-diff-body")]
+    pub git_diff_body: bool,
+    /// Write git-diff output to a file instead of stdout
+    #[arg(long = "git-diff-output")]
+    pub git_diff_output: Option<PathBuf>,
     /// Source path or file (used to generate a plan when --plan is not provided)
     #[arg(long)]
     pub source: Option<PathBuf>,
@@ -185,6 +191,12 @@ pub struct RemovemptyArgs {
     /// Emit git-style diff entries for removals when performing a dry-run or run
     #[arg(long = "git-diff")]
     pub git_diff: bool,
+    /// Include file content hunks in the git-diff output (unified-like)
+    #[arg(long = "git-diff-body")]
+    pub git_diff_body: bool,
+    /// Write git-diff output to a file instead of stdout
+    #[arg(long = "git-diff-output")]
+    pub git_diff_output: Option<PathBuf>,
 }
 
 #[derive(Args, Debug)]
@@ -212,6 +224,12 @@ pub struct RenamerArgs {
     /// When showing a dry-run or run summary, emit a git-style diff for each planned rename
     #[arg(long = "git-diff")]
     pub git_diff: bool,
+    /// Include file content hunks in the git-diff output (unified-like)
+    #[arg(long = "git-diff-body")]
+    pub git_diff_body: bool,
+    /// Write git-diff output to a file instead of stdout
+    #[arg(long = "git-diff-output")]
+    pub git_diff_output: Option<PathBuf>,
 
     /// Don't actually rename, just show what would be renamed
     #[arg(long = "dry-run")]

@@ -2,6 +2,7 @@ use anyhow::Result;
 use globset::{Glob, GlobSet};
 use log::warn;
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 
 /// Remove empty directories in `path` using post-order traversal.
@@ -13,6 +14,8 @@ pub fn remove_empty_directories(
     min_depth: Option<usize>,
     excludes: &[String],
     git_diff: bool,
+    git_diff_body: bool,
+    git_diff_output: Option<&Path>,
 ) -> Result<()> {
     if !path.exists() {
         warn!("Path {} does not exist, nothing to do", path.display());
@@ -40,6 +43,8 @@ pub fn remove_empty_directories(
         p: &Path,
         dry_run: bool,
         git_diff: bool,
+        git_diff_body: bool,
+        git_diff_output: Option<&Path>,
         root: &Path,
         depth: usize,
         min_allowed: usize,
@@ -68,13 +73,37 @@ pub fn remove_empty_directories(
         if is_empty && !excluded && depth >= min_allowed {
             if dry_run {
                 if git_diff {
-                    println!("{}", crate::diff::format_remove_dir_diff(p));
+                    let diff = crate::diff::format_remove_dir_diff(p);
+                    if let Some(out_path) = git_diff_output {
+                        if let Err(e) = std::fs::OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open(out_path)
+                            .and_then(|mut f| f.write_all(diff.as_bytes()))
+                        {
+                            let _ = writeln!(std::io::stderr(), "warning: failed writing diff to {}: {}", out_path.display(), e);
+                        }
+                    } else {
+                        println!("{}", diff);
+                    }
                 } else {
                     println!("Would remove empty directory: {}", p.display());
                 }
             } else {
                 if git_diff {
-                    println!("{}", crate::diff::format_remove_dir_diff(p));
+                    let diff = crate::diff::format_remove_dir_diff(p);
+                    if let Some(out_path) = git_diff_output {
+                        if let Err(e) = std::fs::OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open(out_path)
+                            .and_then(|mut f| f.write_all(diff.as_bytes()))
+                        {
+                            let _ = writeln!(std::io::stderr(), "warning: failed writing diff to {}: {}", out_path.display(), e);
+                        }
+                    } else {
+                        println!("{}", diff);
+                    }
                 } else {
                     println!("Removing empty directory: {}", p.display());
                 }
@@ -90,7 +119,7 @@ pub fn remove_empty_directories(
     }
 
     // start recursion
-    helper(path, dry_run, git_diff, &root, 0, min_allowed, &globset)?;
+    helper(path, dry_run, git_diff, git_diff_body, git_diff_output, &root, 0, min_allowed, &globset)?;
     Ok(())
 }
 
@@ -108,7 +137,7 @@ mod tests {
         create_dir_all(root.join("keep")).unwrap();
         create_dir_all(root.join("top_empty")).unwrap();
         File::create(root.join("keep").join("file.txt")).unwrap();
-        remove_empty_directories(&root, false, Some(2), &["keep/**".to_string()], false).unwrap();
+        remove_empty_directories(&root, false, Some(2), &["keep/**".to_string()], false, false, None).unwrap();
         assert!(root.join("a").exists());
         assert!(!root.join("a").join("b").exists());
         assert!(root.join("keep").exists());
