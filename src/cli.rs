@@ -141,6 +141,9 @@ pub struct CopydiffArgs {
     /// Show what would be done without executing
     #[arg(long = "dry-run")]
     pub dry_run: bool,
+    /// When showing a dry-run or run summary, emit a git-style diff for each planned operation
+    #[arg(long = "git-diff")]
+    pub git_diff: bool,
     /// Source path or file (used to generate a plan when --plan is not provided)
     #[arg(long)]
     pub source: Option<PathBuf>,
@@ -179,6 +182,9 @@ pub struct RemovemptyArgs {
     /// Directory exclusion patterns
     #[arg(long, value_delimiter = ',')]
     pub exclude: Vec<String>,
+    /// Emit git-style diff entries for removals when performing a dry-run or run
+    #[arg(long = "git-diff")]
+    pub git_diff: bool,
 }
 
 #[derive(Args, Debug)]
@@ -190,6 +196,22 @@ pub struct RenamerArgs {
     /// Rename pattern (implementation defined)
     #[arg(long)]
     pub pattern: Option<String>,
+
+    /// Replacement string when using regex mode (used with --pattern which becomes the regex)
+    #[arg(long = "replace")]
+    pub replace: Option<String>,
+
+    /// Path to a mapping file (CSV or JSON) describing renames as pairs; if present, mappings take precedence
+    #[arg(long = "map")]
+    pub map: Option<std::path::PathBuf>,
+
+    /// Treat --pattern as a regex (use --replace for substitution)
+    #[arg(long = "regex")]
+    pub regex: bool,
+
+    /// When showing a dry-run or run summary, emit a git-style diff for each planned rename
+    #[arg(long = "git-diff")]
+    pub git_diff: bool,
 
     /// Don't actually rename, just show what would be renamed
     #[arg(long = "dry-run")]

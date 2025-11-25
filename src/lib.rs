@@ -12,6 +12,7 @@ pub mod removempty;
 pub mod renamer;
 pub mod report;
 pub mod utils;
+pub mod diff;
 pub mod walk;
 
 pub use config::RuntimeConfig;
@@ -20,6 +21,7 @@ pub use memory::{BufferPool, MemoryMode};
 pub use pipeline::Pipeline;
 pub use removempty::remove_empty_directories;
 pub use renamer::rename_files;
+pub use renamer::rename_files_with_options;
 
 pub use bench::run_benchmark;
 pub use report::generate_report;

@@ -195,6 +195,7 @@ pub fn execute_copy_plan(
     plan: &mut CopyPlan,
     opts: CopyOptions,
     persist_path: Option<&Path>,
+    git_diff: bool,
 ) -> Result<()> {
     for i in 0..plan.ops.len() {
         // take a short-lived mutable borrow for the current op
@@ -226,6 +227,11 @@ pub fn execute_copy_plan(
         // perform copy
         fs::copy(src, &target_path)
             .with_context(|| format!("copy {:?} -> {:?}", src, target_path))?;
+
+        if git_diff {
+            let diff = crate::diff::format_copy_diff(src, &target_path, !dst.exists(), None, true);
+            println!("{}", diff);
+        }
 
         // preserve permissions if possible
         if let Ok(metadata) = fs::metadata(src) {
@@ -265,7 +271,7 @@ pub fn execute_copy_plan(
 }
 
 /// Print what would be done for a given plan.
-pub fn dry_run_copy_plan(plan: &CopyPlan) {
+pub fn dry_run_copy_plan(plan: &CopyPlan, git_diff: bool) {
     if let Some(meta) = &plan.meta {
         println!("Plan generated at {}", meta.generated_at);
         if let Some(src) = &meta.source_root {
@@ -279,10 +285,20 @@ pub fn dry_run_copy_plan(plan: &CopyPlan) {
         println!("No copy operations to perform.");
         return;
     }
-    println!("Planned copy operations:");
-    for op in &plan.ops {
-        let status = if op.done { " (done)" } else { "" };
-        println!("  {}: {} -> {}{}", op.op, op.src, op.dst, status);
+            if git_diff {
+                for op in &plan.ops {
+            let src = std::path::Path::new(&op.src);
+            let dst = std::path::Path::new(&op.dst);
+            let new_file = !dst.exists();
+                    let diff = crate::diff::format_copy_diff(src, dst, new_file, None, true);
+            println!("{}", diff);
+        }
+    } else {
+        println!("Planned copy operations:");
+        for op in &plan.ops {
+            let status = if op.done { " (done)" } else { "" };
+            println!("  {}: {} -> {}{}", op.op, op.src, op.dst, status);
+        }
     }
 }
 
@@ -345,7 +361,7 @@ mod tests {
             conflict: ConflictStrategy::Skip,
             preserve_times: false,
         };
-        execute_copy_plan(&mut plan, opts, None).unwrap();
+        execute_copy_plan(&mut plan, opts, None, false).unwrap();
         let contents = fs::read(&dst_file).unwrap();
         assert_eq!(&contents, b"existing");
 
@@ -354,7 +370,7 @@ mod tests {
             conflict: ConflictStrategy::Rename,
             preserve_times: false,
         };
-        execute_copy_plan(&mut plan, opts, None).unwrap();
+        execute_copy_plan(&mut plan, opts, None, false).unwrap();
         let renamed = dst_dir.join("file-copy1.txt");
         assert!(renamed.exists());
         let new_contents = fs::read(renamed).unwrap();

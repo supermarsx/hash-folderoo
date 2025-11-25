@@ -12,6 +12,7 @@ pub fn remove_empty_directories(
     dry_run: bool,
     min_depth: Option<usize>,
     excludes: &[String],
+    git_diff: bool,
 ) -> Result<()> {
     if !path.exists() {
         warn!("Path {} does not exist, nothing to do", path.display());
@@ -38,6 +39,7 @@ pub fn remove_empty_directories(
     fn helper(
         p: &Path,
         dry_run: bool,
+        git_diff: bool,
         root: &Path,
         depth: usize,
         min_allowed: usize,
@@ -48,7 +50,7 @@ pub fn remove_empty_directories(
             let e = entry?;
             let pth = e.path();
             if pth.is_dir() {
-                let child_empty = helper(&pth, dry_run, root, depth + 1, min_allowed, excludes)?;
+                let child_empty = helper(&pth, dry_run, git_diff, root, depth + 1, min_allowed, excludes)?;
                 if !child_empty {
                     is_empty = false;
                 }
@@ -65,9 +67,17 @@ pub fn remove_empty_directories(
 
         if is_empty && !excluded && depth >= min_allowed {
             if dry_run {
-                println!("Would remove empty directory: {}", p.display());
+                if git_diff {
+                    println!("{}", crate::diff::format_remove_dir_diff(p));
+                } else {
+                    println!("Would remove empty directory: {}", p.display());
+                }
             } else {
-                println!("Removing empty directory: {}", p.display());
+                if git_diff {
+                    println!("{}", crate::diff::format_remove_dir_diff(p));
+                } else {
+                    println!("Removing empty directory: {}", p.display());
+                }
                 fs::remove_dir(p)?;
             }
             return Ok(true);
@@ -80,7 +90,7 @@ pub fn remove_empty_directories(
     }
 
     // start recursion
-    helper(path, dry_run, &root, 0, min_allowed, &globset)?;
+    helper(path, dry_run, git_diff, &root, 0, min_allowed, &globset)?;
     Ok(())
 }
 
@@ -98,7 +108,7 @@ mod tests {
         create_dir_all(root.join("keep")).unwrap();
         create_dir_all(root.join("top_empty")).unwrap();
         File::create(root.join("keep").join("file.txt")).unwrap();
-        remove_empty_directories(&root, false, Some(2), &["keep/**".to_string()]).unwrap();
+        remove_empty_directories(&root, false, Some(2), &["keep/**".to_string()], false).unwrap();
         assert!(root.join("a").exists());
         assert!(!root.join("a").join("b").exists());
         assert!(root.join("keep").exists());

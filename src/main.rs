@@ -583,10 +583,11 @@ fn main() -> anyhow::Result<()> {
                     conflict,
                     preserve_times: args.preserve_times,
                 };
-                copy::execute_copy_plan(&mut plan, opts, None).map_err(|e| anyhow::anyhow!(e))?;
+                copy::execute_copy_plan(&mut plan, opts, None, args.git_diff)
+                    .map_err(|e| anyhow::anyhow!(e))?;
             } else {
                 // default to dry-run output
-                copy::dry_run_copy_plan(&plan);
+                copy::dry_run_copy_plan(&plan, args.git_diff);
             }
         }
         Some(hash_folderoo::cli::Commands::Removempty(args)) => {
@@ -600,6 +601,7 @@ fn main() -> anyhow::Result<()> {
                 args.dry_run,
                 args.min_empty_depth,
                 &args.exclude,
+                args.git_diff,
             )
             .map_err(|e| anyhow::anyhow!("removempty error: {}", e))?;
         }
@@ -609,10 +611,26 @@ fn main() -> anyhow::Result<()> {
                 .as_ref()
                 .map(|p| p.to_string_lossy().into_owned())
                 .ok_or_else(|| anyhow::anyhow!("--path is required"))?;
-            let pattern = args.pattern.as_deref()
-                .ok_or_else(|| anyhow::anyhow!("--pattern is required"))?;
-            hash_folderoo::rename_files(std::path::Path::new(&path), pattern, args.dry_run)
-                .map_err(|e| anyhow::anyhow!("renamer error: {}", e))?;
+
+            // If a mapping file is provided, it takes precedence. Otherwise pattern (required) is used.
+            if args.map.is_none() && args.pattern.is_none() {
+                anyhow::bail!("either --map or --pattern is required for renamer");
+            }
+
+            let map_path = args.map.as_deref().map(|p| p.as_ref());
+            let pattern = args.pattern.as_deref();
+            let replace = args.replace.as_deref();
+
+            hash_folderoo::rename_files_with_options(
+                std::path::Path::new(&path),
+                pattern,
+                replace,
+                map_path,
+                args.regex,
+                args.dry_run,
+                args.git_diff,
+            )
+            .map_err(|e| anyhow::anyhow!("renamer error: {}", e))?;
         }
         Some(hash_folderoo::cli::Commands::Benchmark(args)) => {
             let alg = args.algorithm.as_deref().unwrap_or("blake3");

@@ -547,6 +547,7 @@ dependencies = [
  "log",
  "predicates 2.1.5",
  "rayon",
+ "regex",
  "serde",
  "serde_json",
  "serde_yaml",
