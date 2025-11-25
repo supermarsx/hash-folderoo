@@ -66,6 +66,12 @@ pub struct HashmapArgs {
     #[arg(long = "xof-length")]
     pub xof_length: Option<usize>,
 
+    /// Allow requesting XOF-like output lengths for algorithms that don't natively support XOF.
+    /// This enables deterministic expansion behavior (opt-in) and is intentionally required
+    /// to avoid accidental non-standard output when users request large lengths for fixed-output algorithms.
+    #[arg(long = "force-expand")]
+    pub force_expand: bool,
+
     /// Exclude patterns (can be given multiple times or comma-separated)
     #[arg(long, value_delimiter = ',')]
     pub exclude: Vec<String>,

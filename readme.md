@@ -15,7 +15,7 @@ This crate rebuilds the feature set as an idiomatic, multi-command CLI with stro
 
 | Command | Purpose | Handy flags |
 | --- | --- | --- |
-| `hashmap` | Walk a directory, hash every file, and write a map in JSON or CSV. | `--path`, `--output`, `--format`, `--algorithm`, `--xof-length`, `--strip-prefix`, `--exclude`, `--threads`, `--mem-mode`, `--max-ram`, `--progress`, `--dry-run` |
+| `hashmap` | Walk a directory, hash every file, and write a map in JSON or CSV. | `--path`, `--output`, `--format`, `--algorithm`, `--xof-length`, `--force-expand`, `--strip-prefix`, `--exclude`, `--threads`, `--mem-mode`, `--max-ram`, `--progress`, `--dry-run` |
 | `compare` | Compare two maps or directories and classify files as identical, changed, moved, missing, or new. | `--source`, `--target`, `--format {json,csv}`, `--algorithm` |
 | `copydiff` | Generate and optionally execute copy ops derived from a comparison. | `--source`, `--target`, `--plan <json>`, `--execute`, `--dry-run`, `--conflict {overwrite,skip,rename}`, `--preserve-times`, `--algorithm` |
 | `removempty` | Delete now-empty directories (post-order) with glob exclusions. | `--path`, `--dry-run`, `--min-empty-depth`, `--exclude` |
@@ -34,6 +34,8 @@ hash-folderoo hashmap --help
 ```
 
 Use `--alg-list` to print the currently compiled hashing algorithms (BLAKE3, BLAKE2b, BLAKE2bp, SHAKE256, TurboSHAKE256, ParallelHash256, XXH3-1024, WyHash-1024, KangarooTwelve).
+
+Note about forcing expansion: algorithms that do not natively support XOF (e.g., BLAKE2b, BLAKE2bp) will reject requests for arbitrarily-long output unless you explicitly opt-in using `--force-expand`. When used, the tool performs a deterministic, non-standard expansion (chained hashing) to produce the requested number of bytes. This is intended for benchmarking and interoperability testing and is not a cryptographic XOF replacement.
 
 `xxh3-1024` and `wyhash-1024` are non-cryptographic options that expand fast hashes into 1024-bit digests via deterministic counters, suitable for high-speed comparisons/benchmarks instead of integrity/security guarantees.
 

@@ -89,6 +89,63 @@ mod tests {
     }
 
     #[test]
+    fn blake2b_expansion_large_len() {
+        let inputs: &[&[u8]] = &[b"hello", b"The quick brown fox"];
+        for &inp in inputs {
+            let mut h = Blake2bHasher::new();
+            h.update_reader(&mut &inp[..]).unwrap();
+            let got = h.finalize_hex(128); // request larger than native 64
+
+            // compute expected expanded bytes using same deterministic chaining
+            let mut params = Params::new();
+            params.hash_length(64);
+            let mut state = params.to_state();
+            state.update(inp);
+            let base = state.finalize();
+            let seed = base.as_bytes();
+
+            let mut expected = Vec::new();
+            let mut counter: u32 = 0;
+            while expected.len() < 128 {
+                let mut input = Vec::with_capacity(seed.len() + 4);
+                input.extend_from_slice(seed);
+                input.extend_from_slice(&counter.to_le_bytes());
+                let chunk = Params::new().hash(&input);
+                expected.extend_from_slice(chunk.as_bytes());
+                counter = counter.wrapping_add(1);
+            }
+            expected.truncate(128);
+            assert_eq!(got, hex::encode(expected));
+        }
+    }
+
+    #[test]
+    fn blake2bp_expansion_large_len() {
+        let inputs: &[&[u8]] = &[b"hello", b"The quick brown fox"];
+        for &inp in inputs {
+            let mut h = Blake2bpHasher::new();
+            h.update_reader(&mut &inp[..]).unwrap();
+            let got = h.finalize_hex(128); // request larger than native 64
+
+            let expected_base = blake2bp::Params::new().hash(inp);
+            let seed = expected_base.as_bytes();
+
+            let mut expected = Vec::new();
+            let mut counter: u32 = 0;
+            while expected.len() < 128 {
+                let mut input = Vec::with_capacity(seed.len() + 4);
+                input.extend_from_slice(seed);
+                input.extend_from_slice(&counter.to_le_bytes());
+                let chunk = blake2bp::Params::new().hash(&input);
+                expected.extend_from_slice(chunk.as_bytes());
+                counter = counter.wrapping_add(1);
+            }
+            expected.truncate(128);
+            assert_eq!(got, hex::encode(expected));
+        }
+    }
+
+    #[test]
     fn k12_matches_direct() {
         let inputs: &[&[u8]] = &[b"", b"hello", b"The quick brown fox"];
         for &inp in inputs {

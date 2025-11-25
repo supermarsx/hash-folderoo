@@ -47,7 +47,31 @@ impl HasherImpl for Blake2bpHasher {
     fn finalize_hex(&self, out_len: usize) -> String {
         let hash = self.state.clone().finalize();
         let bytes = hash.as_bytes();
-        let take = out_len.min(bytes.len());
-        hex::encode(&bytes[..take])
+        if out_len <= bytes.len() {
+            let take = out_len.min(bytes.len());
+            return hex::encode(&bytes[..take]);
+        }
+
+        // Deterministic expansion using blake2bp hashing of seed || counter
+        fn expand_seed(seed: &[u8], out_len: usize) -> Vec<u8> {
+            if out_len == 0 {
+                return vec![];
+            }
+            let mut out = Vec::with_capacity(out_len);
+            let mut counter: u32 = 0;
+            while out.len() < out_len {
+                let mut input = Vec::with_capacity(seed.len() + 4);
+                input.extend_from_slice(seed);
+                input.extend_from_slice(&counter.to_le_bytes());
+                let chunk = blake2bp::Params::new().hash(&input);
+                out.extend_from_slice(chunk.as_bytes());
+                counter = counter.wrapping_add(1);
+            }
+            out.truncate(out_len);
+            out
+        }
+
+        let expanded = expand_seed(bytes, out_len);
+        hex::encode(expanded)
     }
 }

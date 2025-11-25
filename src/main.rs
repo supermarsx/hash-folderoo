@@ -193,8 +193,17 @@ fn main() -> anyhow::Result<()> {
 
             // Probe to determine default out length
             let alg_info = alg_enum.create().info();
-            if xof_len.is_some() && !alg_info.supports_xof {
-                anyhow::bail!("algorithm {} does not support --xof-length", alg_info.name);
+            if xof_len.is_some() && !alg_info.supports_xof && !args.force_expand {
+                anyhow::bail!(
+                    "algorithm {} does not support --xof-length (use --force-expand to opt-in to non-native expansion)",
+                    alg_info.name
+                );
+            }
+            if xof_len.is_some() && !alg_info.supports_xof && args.force_expand {
+                warn!(
+                    "algorithm {} does not natively support XOF; proceeding with deterministic expansion (non-standard)",
+                    alg_info.name
+                );
             }
             let default_out = alg_info.output_len_default;
             let out_len = xof_len.unwrap_or(default_out);
