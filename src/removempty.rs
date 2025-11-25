@@ -55,7 +55,17 @@ pub fn remove_empty_directories(
             let e = entry?;
             let pth = e.path();
             if pth.is_dir() {
-                let child_empty = helper(&pth, dry_run, git_diff, root, depth + 1, min_allowed, excludes)?;
+                let child_empty = helper(
+                    &pth,
+                    dry_run,
+                    git_diff,
+                    git_diff_body,
+                    git_diff_output,
+                    root,
+                    depth + 1,
+                    min_allowed,
+                    excludes,
+                )?;
                 if !child_empty {
                     is_empty = false;
                 }

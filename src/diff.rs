@@ -36,8 +36,10 @@ pub fn format_copy_diff(
         // Try to include a simple unified-like body; fall back silently on IO failures
         if let Some(src_lines) = read_lines_opt(src) {
             let dst_lines = read_lines_opt(dst).unwrap_or_default();
-            let max = std::cmp::max(src_lines.len(), dst_lines.len());
-            out.push_str("@@ -1,0 +1,0 @@\n");
+            let src_len = src_lines.len();
+            let dst_len = dst_lines.len();
+            let max = std::cmp::max(src_len, dst_len);
+            out.push_str(&format!("@@ -1,{} +1,{} @@\n", src_len, dst_len));
             for i in 0..max {
                 match (src_lines.get(i), dst_lines.get(i)) {
                     (Some(sv), Some(dv)) => {
@@ -69,8 +71,10 @@ pub fn format_rename_diff(src: &Path, dst: &Path, include_patch: bool) -> String
     if include_patch {
         if let Some(src_lines) = read_lines_opt(src) {
             let dst_lines = read_lines_opt(dst).unwrap_or_default();
-            let max = std::cmp::max(src_lines.len(), dst_lines.len());
-            out.push_str("@@ -1,0 +1,0 @@\n");
+            let src_len = src_lines.len();
+            let dst_len = dst_lines.len();
+            let max = std::cmp::max(src_len, dst_len);
+            out.push_str(&format!("@@ -1,{} +1,{} @@\n", src_len, dst_len));
             for i in 0..max {
                 match (src_lines.get(i), dst_lines.get(i)) {
                     (Some(sv), Some(dv)) => {

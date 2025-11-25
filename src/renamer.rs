@@ -10,7 +10,7 @@ use walkdir::WalkDir;
 /// If `dry_run` is true, only print the planned renames.
 /// Backward-compatible wrapper that calls the extended renamer with basic parameters.
 pub fn rename_files(path: &Path, pattern: &str, dry_run: bool) -> Result<()> {
-    rename_files_with_options(path, Some(pattern), None, None, false, dry_run, false, None)
+    rename_files_with_options(path, Some(pattern), None, None, false, dry_run, false, false, None)
 }
 
 
@@ -205,7 +205,7 @@ mod tests {
         write(root.join("file2.txt"), b"world").unwrap();
 
         // regex replace digits with X
-        let res = rename_files_with_options(&root, Some("file(\\d)"), Some("fileX"), None, true, true, true, None);
+        let res = rename_files_with_options(&root, Some("file(\\d)"), Some("fileX"), None, true, true, true, true, None);
         assert!(res.is_ok());
 
         // Dry-run should not have renamed files
@@ -224,7 +224,7 @@ mod tests {
         let map_file = dir.path().join("map.csv");
         std::fs::write(&map_file, "a.txt,b.txt\n").unwrap();
 
-        let res = rename_files_with_options(&root, None, None, Some(&map_file), false, true, true, None);
+        let res = rename_files_with_options(&root, None, None, Some(&map_file), false, true, true, true, None);
         assert!(res.is_ok());
         // still unchanged after dry-run false? Wait dry_run true -> no change, we passed true so unchanged.
         assert!(root.join("a.txt").exists());
