@@ -1,3 +1,5 @@
+<img width="250" height="250" alt="hash-folderoo-icon" src="https://github.com/user-attachments/assets/c72f1ec8-5686-4604-baa5-0575525d4362" />
+
 # hash-folderoo
 
 Rust toolkit for hashing folders, comparing snapshots, and automating clean-up tasks.  
