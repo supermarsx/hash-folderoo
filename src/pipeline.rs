@@ -157,6 +157,10 @@ impl Pipeline {
                 handles.push(std::thread::spawn(move || {
                     // Iterate until channel closes
                     for path in rx.iter() {
+                        // Enforce soft backpressure: if allocated buffers exceed budget, yield briefly
+                        if pool_clone.allocated_buffers() > pool_clone.max_buffers() {
+                            std::thread::sleep(std::time::Duration::from_millis(5));
+                        }
                         if let Err(e) = (worker)(path, pool_clone.clone()) {
                             log::warn!("worker error: {:?}", e);
                         }

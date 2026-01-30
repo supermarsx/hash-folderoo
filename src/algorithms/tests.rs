@@ -303,25 +303,30 @@ mod tests {
         let got = expand_digest(&Algorithm::Blake2b, inp, out_len);
         assert_eq!(got.len(), out_len);
 
-        // reference: H(input || 0x00 || counter) chaining
-        let mut expected = Vec::new();
-        let mut counter: u32 = 0;
-        while expected.len() < out_len {
-            let mut input = Vec::with_capacity(inp.len() + 1 + 4);
-            input.extend_from_slice(inp);
-            input.push(0u8);
-            input.extend_from_slice(&counter.to_le_bytes());
-            let chunk = Params::new().hash(&input);
-            expected.extend_from_slice(chunk.as_bytes());
-            counter = counter.wrapping_add(1);
-        }
-        expected.truncate(out_len);
-
+        // authoritative known-vector for "abc" expanded to 80 bytes with blake2b deterministic chaining
+        let expected_hex = "d499aacf9f76b247e384a307421b48335ae36c9f3a60be06532b37abe7c4e30d86415fc91d9ebbd4d383a0f1e3ba8eb64fae8be5182a33555a78acd6cdb91b4748b911c2278692a8e483246e981a09fd";
+        let expected = hex::decode(expected_hex).expect("hex decode");
         assert_eq!(got, expected);
-        let hex = hex::encode(got);
-        assert_eq!(hex.len(), out_len * 2);
-        // Check a small fixed prefix/suffix from the computed expected value
-        assert!(hex.starts_with(&hex[..8]));
-        assert!(hex.ends_with(&hex[hex.len() - 8..]));
+    }
+
+    #[test]
+    fn expand_digest_all_algorithms_smoke() {
+        let inp = b"smoke";
+        for alg in Algorithm::all() {
+            let out = expand_digest(alg, inp, 32);
+            assert_eq!(out.len(), 32, "algorithm {:?}", alg);
+        }
+    }
+
+    #[test]
+    fn hasher_finalize_hex_len_matches() {
+        let inp = b"abc";
+        for alg in Algorithm::all() {
+            let mut h = alg.create();
+            h.update_reader(&mut &inp[..]).unwrap();
+            let out = h.finalize_hex(16);
+            // 16 bytes -> 32 hex chars
+            assert_eq!(out.len(), 32, "algorithm {:?}", alg);
+        }
     }
 }

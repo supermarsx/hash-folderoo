@@ -1,6 +1,9 @@
 use anyhow::Result;
 use log::warn;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 use sysinfo::{System, SystemExt};
 
 /// Memory usage modes for the hashing engine.
@@ -29,67 +32,147 @@ impl std::str::FromStr for MemoryMode {
     }
 }
 
+/// Internal state for buffer pool accounting.
+struct BufferPoolState {
+    inner: Mutex<Vec<Vec<u8>>>,
+    max_buffers: usize,
+    allocated: AtomicUsize,
+    buf_size: usize,
+}
+
 /// A pool of reusable byte buffers to reduce allocation churn.
 ///
 /// The pool stores Vec<u8> buffers and hands out a PooledBuffer wrapper which
-/// returns the buffer to the pool on Drop.
+/// returns the buffer to the pool on Drop. The pool enforces a soft maximum
+/// number of buffers (budget) and tracks outstanding allocations to avoid
+/// unbounded memory growth.
 #[derive(Clone)]
 pub struct BufferPool {
-    inner: Arc<Mutex<Vec<Vec<u8>>>>,
-    buf_size: usize,
+    state: Arc<BufferPoolState>,
 }
 
 impl BufferPool {
     /// Create a new pool with `num_buffers` buffers preallocated to `buf_size`.
+    /// `num_buffers` is treated as a soft budget for the pool; callers may still
+    /// receive allocated buffers if the pool is exhausted (but the pool will
+    /// attempt to wait briefly for returned buffers first).
     pub fn new(num_buffers: usize, buf_size: usize) -> Self {
         let mut v = Vec::with_capacity(num_buffers);
         for _ in 0..num_buffers {
             v.push(vec![0u8; buf_size]);
         }
-        Self {
-            inner: Arc::new(Mutex::new(v)),
+        let state = BufferPoolState {
+            inner: Mutex::new(v),
+            max_buffers: std::cmp::max(1, num_buffers),
+            allocated: AtomicUsize::new(num_buffers),
             buf_size,
+        };
+        Self {
+            state: Arc::new(state),
         }
     }
 
-    /// Get a buffer from the pool. If none are available, allocate a fresh one.
+    /// Get a buffer from the pool. If none are available, waits briefly for a
+    /// returned buffer up to a small number of attempts, otherwise allocates a
+    /// fresh buffer. Allocations are counted in `allocated` so the pool can
+    /// enforce/observe the configured budget.
     pub fn get(&self) -> PooledBuffer {
-        if let Ok(mut guard) = self.inner.lock() {
+        // Fast path: try to pop an available buffer
+        if let Ok(mut guard) = self.state.inner.lock() {
             if let Some(mut b) = guard.pop() {
-                // ensure capacity
-                b.resize(self.buf_size, 0u8);
+                b.resize(self.state.buf_size, 0u8);
                 return PooledBuffer {
                     buf: Some(b),
-                    pool: Some(self.inner.clone()),
+                    pool: Some(self.state.clone()),
                 };
             }
         }
-        // fallback: allocate
+
+        // No buffer available in pool. If we haven't exceeded max_buffers, allocate
+        // and account for it.
+        let mut alloc_now = false;
+        let allocated = self.state.allocated.load(Ordering::SeqCst);
+        if allocated < self.state.max_buffers {
+            alloc_now = true;
+        } else {
+            // Wait briefly for a buffer to become available
+            for _ in 0..5 {
+                thread::sleep(Duration::from_millis(10));
+                if let Ok(mut guard) = self.state.inner.lock() {
+                    if let Some(mut b) = guard.pop() {
+                        b.resize(self.state.buf_size, 0u8);
+                        return PooledBuffer {
+                            buf: Some(b),
+                            pool: Some(self.state.clone()),
+                        };
+                    }
+                }
+            }
+            // still no buffer; we'll allocate but log that we exceeded budget
+            warn!(
+                "buffer pool exhausted (max_buffers={}), allocating beyond budget",
+                self.state.max_buffers
+            );
+            alloc_now = true;
+        }
+
+        if alloc_now {
+            // Increment allocated count to reflect this allocation.
+            self.state.allocated.fetch_add(1, Ordering::SeqCst);
+            return PooledBuffer {
+                buf: Some(vec![0u8; self.state.buf_size]),
+                pool: Some(self.state.clone()),
+            };
+        }
+
+        // fallback - should not reach here but allocate anyway
+        self.state.allocated.fetch_add(1, Ordering::SeqCst);
         PooledBuffer {
-            buf: Some(vec![0u8; self.buf_size]),
-            pool: Some(self.inner.clone()),
+            buf: Some(vec![0u8; self.state.buf_size]),
+            pool: Some(self.state.clone()),
         }
     }
 
     /// Return a buffer to the pool manually.
     pub fn put(&self, mut buf: Vec<u8>) {
         // Normalize buffer size to configured buf_size
-        buf.resize(self.buf_size, 0u8);
-        if let Ok(mut guard) = self.inner.lock() {
-            guard.push(buf);
+        buf.resize(self.state.buf_size, 0u8);
+        if let Ok(mut guard) = self.state.inner.lock() {
+            // If pool is already holding the budgeted number of buffers, drop
+            // this buffer and decrement allocated count; otherwise push it back.
+            if guard.len() < self.state.max_buffers {
+                guard.push(buf);
+                return;
+            }
+        }
+        // Pool full: drop and decrement allocated counter
+        let prev = self.state.allocated.fetch_sub(1, Ordering::SeqCst);
+        if prev == 0 {
+            // shouldn't happen, but guard against underflow
+            self.state.allocated.store(0, Ordering::SeqCst);
         }
     }
 
     /// Get configured buffer size.
     pub fn buf_size(&self) -> usize {
-        self.buf_size
+        self.state.buf_size
+    }
+
+    /// Inspect current allocated buffers (including those in pool and checked out).
+    pub fn allocated_buffers(&self) -> usize {
+        self.state.allocated.load(Ordering::SeqCst)
+    }
+
+    /// Get configured max buffers budget.
+    pub fn max_buffers(&self) -> usize {
+        self.state.max_buffers
     }
 }
 
 /// A wrapper that returns its buffer to the pool when dropped.
 pub struct PooledBuffer {
     buf: Option<Vec<u8>>,
-    pool: Option<Arc<Mutex<Vec<Vec<u8>>>>>,
+    pool: Option<Arc<BufferPoolState>>,
 }
 
 impl PooledBuffer {
@@ -120,10 +203,20 @@ impl AsMut<[u8]> for PooledBuffer {
 impl Drop for PooledBuffer {
     fn drop(&mut self) {
         if let (Some(b), Some(pool)) = (self.buf.take(), self.pool.take()) {
-            // reset length to configured size for predictability
-            // Note: we can't access buf_size here, so just push as-is.
-            if let Ok(mut guard) = pool.lock() {
-                guard.push(b);
+            // Try to return the buffer to the pool if there is capacity.
+            if let Ok(mut guard) = pool.inner.lock() {
+                if guard.len() < pool.max_buffers {
+                    // reset length to buf_size for predictability
+                    let mut b = b;
+                    b.resize(pool.buf_size, 0u8);
+                    guard.push(b);
+                    return;
+                }
+            }
+            // Pool full: drop and decrement allocated counter
+            let prev = pool.allocated.fetch_sub(1, Ordering::SeqCst);
+            if prev == 0 {
+                pool.allocated.store(0, Ordering::SeqCst);
             }
         }
     }

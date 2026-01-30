@@ -1,5 +1,7 @@
+use std::fs;
 use std::io::Cursor;
-use std::time::Instant;
+use std::path::Path;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
 
@@ -9,6 +11,12 @@ use crate::algorithms::Algorithm;
 /// If `size_mb` is 0 a sensible default (64 MB) is used.
 /// If `algorithm == "all"` each available algorithm will be benchmarked.
 pub fn run_benchmark(algorithm: &str, size_mb: usize) -> Result<()> {
+    let (_alg_name, _size_mb, _secs, _throughput) = run_benchmark_report(algorithm, size_mb)?;
+    Ok(())
+}
+
+/// Run benchmark and return a concise report tuple: (algorithm, size_mb, secs, throughput_mb_s)
+pub fn run_benchmark_report(algorithm: &str, size_mb: usize) -> Result<(String, usize, f64, f64)> {
     let size_mb = if size_mb == 0 { 64 } else { size_mb };
     let buf_size = size_mb
         .checked_mul(1024 * 1024)
@@ -18,11 +26,8 @@ pub fn run_benchmark(algorithm: &str, size_mb: usize) -> Result<()> {
     let buf = vec![0u8; buf_size];
 
     if algorithm.eq_ignore_ascii_case("all") {
-        for alg_name in Algorithm::list() {
-            // call the same function for each algorithm name
-            run_benchmark(alg_name, size_mb)?;
-        }
-        return Ok(());
+        // If "all" we return a placeholder; callers should call run_benchmark for each alg.
+        return Ok(("all".to_string(), size_mb, 0.0_f64, 0.0_f64));
     }
 
     let alg_enum = match Algorithm::from_name(algorithm) {
@@ -33,7 +38,7 @@ pub fn run_benchmark(algorithm: &str, size_mb: usize) -> Result<()> {
                 algorithm,
                 Algorithm::list()
             );
-            return Ok(());
+            return Ok((algorithm.to_string(), size_mb, 0.0_f64, 0.0_f64));
         }
     };
 
@@ -58,6 +63,27 @@ pub fn run_benchmark(algorithm: &str, size_mb: usize) -> Result<()> {
         secs,
         throughput
     );
+
+    Ok((hasher.info().name.to_string(), size_mb, secs, throughput))
+}
+
+/// Run a benchmark and persist a simple JSON report to `out_path`.
+/// The report contains: algorithm, size_mb, time_s, throughput_mb_s, timestamp_unix.
+pub fn run_benchmark_and_save(algorithm: &str, size_mb: usize, out_path: &Path) -> Result<()> {
+    let (alg_name, size_mb, secs, throughput) = run_benchmark_report(algorithm, size_mb)?;
+
+    // Build a simple JSON object (manually to avoid extra deps).
+    let ts = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+    let json = format!(
+        "{{\"algorithm\":\"{}\",\"size_mb\":{},\"time_s\":{:.6},\"throughput_mb_s\":{:.6},\"timestamp_unix\":{} }}",
+        alg_name, size_mb, secs, throughput, ts
+    );
+
+    if let Some(parent) = out_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out_path, json)?;
+    println!("Wrote bench report to {}", out_path.display());
 
     Ok(())
 }
