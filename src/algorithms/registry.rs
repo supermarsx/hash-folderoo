@@ -67,6 +67,22 @@ impl Algorithm {
             Algorithm::Wyhash1024 => "wyhash-1024",
         }
     }
+
+    /// Whether this algorithm supports eXtendable-Output (XOF) semantics.
+    pub fn is_xof(&self) -> bool {
+        match self {
+            Algorithm::Shake256 => true,
+            Algorithm::TurboShake256 => true,
+            Algorithm::K12 => true,
+            Algorithm::ParallelHash256 => true,
+            // The remaining algorithms are fixed-output
+            Algorithm::Blake2b
+            | Algorithm::Blake2bp
+            | Algorithm::Blake3
+            | Algorithm::Xxh3_1024
+            | Algorithm::Wyhash1024 => false,
+        }
+    }
 }
 
 impl std::str::FromStr for Algorithm {

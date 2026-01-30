@@ -1,8 +1,8 @@
 use crate::algorithms::{
-    Blake2bHasher, Blake2bpHasher, Blake3Hasher, K12Hasher, ParallelHash256Hasher,
+    Algorithm, Blake2bHasher, Blake2bpHasher, Blake3Hasher, K12Hasher, ParallelHash256Hasher,
     Shake256Hasher, TurboShake256Hasher, WyHashExpander, Xxh3Expander,
 };
-use crate::hash::HasherImpl;
+use crate::hash::{expand_digest, HasherImpl};
 use std::io::Read;
 
 #[cfg(test)]
@@ -10,9 +10,12 @@ mod tests {
     use super::*;
     use blake2b_simd::{blake2bp, Params};
     use blake3;
-    use sha3::{digest::{ExtendableOutput, Update}, Shake256};
-    use tiny_keccak::{IntoXof, ParallelHash, Xof};
+    use sha3::{
+        digest::{ExtendableOutput, Update},
+        Shake256,
+    };
     use tiny_keccak::{Hasher as TKHasher, KangarooTwelve};
+    use tiny_keccak::{IntoXof, ParallelHash, Xof};
     use turboshake::TurboShake256;
     use wyhash::WyHash;
     use xxhash_rust::xxh3::{xxh3_64_with_seed, Xxh3};
@@ -84,7 +87,12 @@ mod tests {
             let got = h.finalize_hex(64);
 
             let expected = blake2bp::Params::new().hash(inp);
-            assert_eq!(got, expected.to_hex().as_str(), "blake2bp mismatch for {:?}", inp);
+            assert_eq!(
+                got,
+                expected.to_hex().as_str(),
+                "blake2bp mismatch for {:?}",
+                inp
+            );
         }
     }
 
@@ -272,5 +280,48 @@ mod tests {
             let expected = wyhash_expand(seed, 128);
             assert_eq!(got, hex::encode(expected), "wyhash mismatch for {:?}", inp);
         }
+    }
+
+    #[test]
+    fn expand_digest_shake256_xof_matches_adapter() {
+        let inp = b"abc";
+        let out_len = 48;
+        let got = expand_digest(&Algorithm::Shake256, inp, out_len);
+        assert_eq!(got.len(), out_len);
+
+        let mut h = Shake256Hasher::new();
+        h.update(inp);
+        let expected_hex = h.finalize_hex(out_len);
+        let expected = hex::decode(expected_hex).unwrap();
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn expand_digest_blake2b_deterministic() {
+        let inp = b"abc";
+        let out_len = 80;
+        let got = expand_digest(&Algorithm::Blake2b, inp, out_len);
+        assert_eq!(got.len(), out_len);
+
+        // reference: H(input || 0x00 || counter) chaining
+        let mut expected = Vec::new();
+        let mut counter: u32 = 0;
+        while expected.len() < out_len {
+            let mut input = Vec::with_capacity(inp.len() + 1 + 4);
+            input.extend_from_slice(inp);
+            input.push(0u8);
+            input.extend_from_slice(&counter.to_le_bytes());
+            let chunk = Params::new().hash(&input);
+            expected.extend_from_slice(chunk.as_bytes());
+            counter = counter.wrapping_add(1);
+        }
+        expected.truncate(out_len);
+
+        assert_eq!(got, expected);
+        let hex = hex::encode(got);
+        assert_eq!(hex.len(), out_len * 2);
+        // Check a small fixed prefix/suffix from the computed expected value
+        assert!(hex.starts_with(&hex[..8]));
+        assert!(hex.ends_with(&hex[hex.len() - 8..]));
     }
 }

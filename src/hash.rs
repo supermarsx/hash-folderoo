@@ -5,6 +5,7 @@ use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::algorithms::Algorithm;
 use crate::memory::BufferPool;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,4 +55,44 @@ pub fn hash_path_with_pool(
         hasher.update(&buf[..read]);
     }
     Ok(())
+}
+
+/// Deterministic expansion for algorithms.
+/// - For XOF algorithms, produce `out_len` bytes via the algorithm's XOF interface.
+/// - For fixed-output algorithms, produce output by computing
+///   H(input || 0x00 || counter) || H(input || 0x00 || counter+1) ...
+///   where H is the algorithm's native fixed-output hash function.
+pub fn expand_digest(alg: &Algorithm, input: &[u8], out_len: usize) -> Vec<u8> {
+    if out_len == 0 {
+        return Vec::new();
+    }
+
+    if alg.is_xof() {
+        let mut hasher = alg.create();
+        hasher.update(input);
+        let hex = hasher.finalize_hex(out_len);
+        return hex::decode(hex).expect("hex decode");
+    }
+
+    // Fixed-output deterministic expansion
+    // Use the algorithm's native output length as the chunk size
+    let native_len = {
+        let h = alg.create();
+        h.info().output_len_default
+    };
+
+    let mut out = Vec::with_capacity(out_len);
+    let mut counter: u32 = 0;
+    while out.len() < out_len {
+        let mut h = alg.create();
+        h.update(input);
+        h.update(&[0u8]);
+        h.update(&counter.to_le_bytes());
+        let hex = h.finalize_hex(native_len);
+        let chunk = hex::decode(hex).expect("hex decode");
+        out.extend_from_slice(&chunk);
+        counter = counter.wrapping_add(1);
+    }
+    out.truncate(out_len);
+    out
 }
