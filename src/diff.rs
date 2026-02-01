@@ -36,210 +36,164 @@ pub fn format_copy_diff(
     if include_patch {
         // Try to include a simple unified-like body; fall back silently on IO failures
         // Attempt a more precise multi-hunk unified-style body with context lines.
-        if let Some(src_lines) = read_lines_opt(src) {
-            let dst_lines = read_lines_opt(dst).unwrap_or_default();
+        let src_lines = read_lines_opt(src).unwrap_or_default();
+        let dst_lines = read_lines_opt(dst).unwrap_or_default();
 
-            // local helper: compute LCS matching positions for two slices
-            fn lcs_positions(a: &[String], b: &[String]) -> Vec<(usize, usize)> {
-                let n = a.len();
-                let m = b.len();
-                // dp table (n+1) x (m+1)
-                let mut dp = vec![vec![0usize; m + 1]; n + 1];
-                for i in (0..n).rev() {
-                    for j in (0..m).rev() {
-                        if a[i] == b[j] {
-                            dp[i][j] = dp[i + 1][j + 1] + 1;
-                        } else {
-                            dp[i][j] = dp[i + 1][j].max(dp[i][j + 1]);
-                        }
-                    }
-                }
-
-                // backtrack to produce matches
-                let mut res = Vec::new();
-                let (mut i, mut j) = (0usize, 0usize);
-                while i < n && j < m {
+        // local helper: compute LCS matching positions for two slices
+        fn lcs_positions(a: &[String], b: &[String]) -> Vec<(usize, usize)> {
+            let n = a.len();
+            let m = b.len();
+            // dp table (n+1) x (m+1)
+            let mut dp = vec![vec![0usize; m + 1]; n + 1];
+            for i in (0..n).rev() {
+                for j in (0..m).rev() {
                     if a[i] == b[j] {
-                        res.push((i, j));
-                        i += 1;
-                        j += 1;
-                    } else if dp[i + 1][j] >= dp[i][j + 1] {
-                        i += 1;
+                        dp[i][j] = dp[i + 1][j + 1] + 1;
                     } else {
-                        j += 1;
+                        dp[i][j] = dp[i + 1][j].max(dp[i][j + 1]);
                     }
                 }
-                res
             }
 
-            // compute change blocks between matches
-            let matches = lcs_positions(&src_lines, &dst_lines);
-            let mut blocks: Vec<(usize, usize, usize, usize)> = Vec::new();
-
-            let mut a_idx = 0usize;
-            let mut b_idx = 0usize;
-            for (mi, mj) in matches.iter() {
-                if *mi > a_idx || *mj > b_idx {
-                    blocks.push((a_idx, *mi, b_idx, *mj));
-                }
-                a_idx = mi + 1;
-                b_idx = mj + 1;
-            }
-            if a_idx < src_lines.len() || b_idx < dst_lines.len() {
-                blocks.push((a_idx, src_lines.len(), b_idx, dst_lines.len()));
-            }
-
-            // expand blocks with context and merge overlapping
-            let mut hunks: Vec<(usize, usize, usize, usize)> = Vec::new();
-            for (a0, a1, b0, b1) in blocks.into_iter() {
-                // expand
-                let start_a = a0.saturating_sub(context);
-                let start_b = b0.saturating_sub(context);
-                let end_a = (a1 + context).min(src_lines.len());
-                let end_b = (b1 + context).min(dst_lines.len());
-
-                if let Some(last) = hunks.last_mut() {
-                    // merge if overlapping or touching
-                    if start_a <= last.1 || start_b <= last.3 {
-                        // extend
-                        last.1 = last.1.max(end_a);
-                        last.3 = last.3.max(end_b);
-                        continue;
-                    }
-                }
-                hunks.push((start_a, end_a, start_b, end_b));
-            }
-
-            // fallback: if no hunks were generated, emit a single full-file hunk
-            if hunks.is_empty() {
-                let ha = 0usize;
-                let hb = src_lines.len();
-                let ka = 0usize;
-                let kb = dst_lines.len();
-                let old_count = hb.saturating_sub(ha);
-                let new_count = kb.saturating_sub(ka);
-                if !(old_count == 0 && new_count == 0) {
-                    out.push_str(&format!(
-                        "@@ -{},{} +{},{} @@\n",
-                        ha + 1,
-                        old_count,
-                        ka + 1,
-                        new_count
-                    ));
-                    let old_slice = &src_lines[ha..hb];
-                    let new_slice = &dst_lines[ka..kb];
-                    let local_matches = lcs_positions(old_slice, new_slice);
-                    let mut ai = 0usize;
-                    let mut bi = 0usize;
-                    for (omi, omj) in local_matches.iter() {
-                        for r in ai..*omi {
-                            out.push_str(&format!("-{}\n", old_slice[r]));
-                        }
-                        for a in bi..*omj {
-                            out.push_str(&format!("+{}\n", new_slice[a]));
-                        }
-                        out.push_str(&format!(" {}\n", old_slice[*omi]));
-                        ai = omi + 1;
-                        bi = omj + 1;
-                    }
-                    for r in ai..old_slice.len() {
-                        out.push_str(&format!("-{}\n", old_slice[r]));
-                    }
-                    for a in bi..new_slice.len() {
-                        out.push_str(&format!("+{}\n", new_slice[a]));
-                    }
-                    out.push_str("\n");
-                }
-            }
-
-            // If there are no hunks, still produce a single full-file hunk so callers asking
-            // for --git-diff-body always receive a body (keeps backward-compatible expectations)
-            if hunks.is_empty() {
-                let ha = 0usize;
-                let hb = src_lines.len();
-                let ka = 0usize;
-                let kb = dst_lines.len();
-                let old_count = hb.saturating_sub(ha);
-                let new_count = kb.saturating_sub(ka);
-                if old_count == 0 && new_count == 0 {
-                    // both empty - nothing to emit
+            // backtrack to produce matches
+            let mut res = Vec::new();
+            let (mut i, mut j) = (0usize, 0usize);
+            while i < n && j < m {
+                if a[i] == b[j] {
+                    res.push((i, j));
+                    i += 1;
+                    j += 1;
+                } else if dp[i + 1][j] >= dp[i][j + 1] {
+                    i += 1;
                 } else {
-                    out.push_str(&format!(
-                        "@@ -{},{} +{},{} @@\n",
-                        ha + 1,
-                        old_count,
-                        ka + 1,
-                        new_count
-                    ));
-                    let old_slice = &src_lines[ha..hb];
-                    let new_slice = &dst_lines[ka..kb];
-                    let local_matches = lcs_positions(old_slice, new_slice);
-                    let mut ai = 0usize;
-                    let mut bi = 0usize;
-                    for (omi, omj) in local_matches.iter() {
-                        for r in ai..*omi {
-                            out.push_str(&format!("-{}\n", old_slice[r]));
-                        }
-                        for a in bi..*omj {
-                            out.push_str(&format!("+{}\n", new_slice[a]));
-                        }
-                        out.push_str(&format!(" {}\n", old_slice[*omi]));
-                        ai = omi + 1;
-                        bi = omj + 1;
-                    }
-                    for r in ai..old_slice.len() {
+                    j += 1;
+                }
+            }
+            res
+        }
+
+        // compute change blocks between matches
+        let matches = lcs_positions(&src_lines, &dst_lines);
+        let mut blocks: Vec<(usize, usize, usize, usize)> = Vec::new();
+
+        let mut a_idx = 0usize;
+        let mut b_idx = 0usize;
+        for (mi, mj) in matches.iter() {
+            if *mi > a_idx || *mj > b_idx {
+                blocks.push((a_idx, *mi, b_idx, *mj));
+            }
+            a_idx = mi + 1;
+            b_idx = mj + 1;
+        }
+        if a_idx < src_lines.len() || b_idx < dst_lines.len() {
+            blocks.push((a_idx, src_lines.len(), b_idx, dst_lines.len()));
+        }
+
+        // expand blocks with context and merge overlapping
+        let mut hunks: Vec<(usize, usize, usize, usize)> = Vec::new();
+        for (a0, a1, b0, b1) in blocks.into_iter() {
+            // expand
+            let start_a = a0.saturating_sub(context);
+            let start_b = b0.saturating_sub(context);
+            let end_a = (a1 + context).min(src_lines.len());
+            let end_b = (b1 + context).min(dst_lines.len());
+
+            if let Some(last) = hunks.last_mut() {
+                // merge if overlapping or touching
+                if start_a <= last.1 || start_b <= last.3 {
+                    // extend
+                    last.1 = last.1.max(end_a);
+                    last.3 = last.3.max(end_b);
+                    continue;
+                }
+            }
+            hunks.push((start_a, end_a, start_b, end_b));
+        }
+
+        // fallback: if no hunks were generated, emit a single full-file hunk
+        if hunks.is_empty() {
+            let ha = 0usize;
+            let hb = src_lines.len();
+            let ka = 0usize;
+            let kb = dst_lines.len();
+            let old_count = hb.saturating_sub(ha);
+            let new_count = kb.saturating_sub(ka);
+            if !(old_count == 0 && new_count == 0) {
+                out.push_str(&format!(
+                    "@@ -{},{} +{},{} @@\n",
+                    ha + 1,
+                    old_count,
+                    ka + 1,
+                    new_count
+                ));
+                let old_slice = &src_lines[ha..hb];
+                let new_slice = &dst_lines[ka..kb];
+                let local_matches = lcs_positions(old_slice, new_slice);
+                let mut ai = 0usize;
+                let mut bi = 0usize;
+                for (omi, omj) in local_matches.iter() {
+                    for r in ai..*omi {
                         out.push_str(&format!("-{}\n", old_slice[r]));
                     }
-                    for a in bi..new_slice.len() {
+                    for a in bi..*omj {
                         out.push_str(&format!("+{}\n", new_slice[a]));
                     }
-                    out.push_str("\n");
+                    out.push_str(&format!(" {}\n", old_slice[*omi]));
+                    ai = omi + 1;
+                    bi = omj + 1;
                 }
-            } else {
-                for (ha, hb, ka, kb) in hunks.iter() {
-                    let old_count = hb - ha;
-                    let new_count = kb - ka;
-                    out.push_str(&format!(
-                        "@@ -{},{} +{},{} @@\n",
-                        ha + 1,
-                        old_count,
-                        ka + 1,
-                        new_count
-                    ));
+                for r in ai..old_slice.len() {
+                    out.push_str(&format!("-{}\n", old_slice[r]));
+                }
+                for a in bi..new_slice.len() {
+                    out.push_str(&format!("+{}\n", new_slice[a]));
+                }
+                out.push_str("\n");
+            }
+        } else {
+            for (ha, hb, ka, kb) in hunks.iter() {
+                let old_count = hb - ha;
+                let new_count = kb - ka;
+                out.push_str(&format!(
+                    "@@ -{},{} +{},{} @@\n",
+                    ha + 1,
+                    old_count,
+                    ka + 1,
+                    new_count
+                ));
 
-                    // local slices
-                    let old_slice = &src_lines[*ha..*hb];
-                    let new_slice = &dst_lines[*ka..*kb];
+                // local slices
+                let old_slice = &src_lines[*ha..*hb];
+                let new_slice = &dst_lines[*ka..*kb];
 
-                    // compute local LCS to drive the hunk output
-                    let local_matches = lcs_positions(old_slice, new_slice);
+                // compute local LCS to drive the hunk output
+                let local_matches = lcs_positions(old_slice, new_slice);
 
-                    let mut ai = 0usize;
-                    let mut bi = 0usize;
-                    for (omi, omj) in local_matches.iter() {
-                        // produce removed lines from ai..omi
-                        for r in ai..*omi {
-                            out.push_str(&format!("-{}\n", old_slice[r]));
-                        }
-                        // produce added lines from bi..omj
-                        for a in bi..*omj {
-                            out.push_str(&format!("+{}\n", new_slice[a]));
-                        }
-                        // matched line as context
-                        out.push_str(&format!(" {}\n", old_slice[*omi]));
-                        ai = omi + 1;
-                        bi = omj + 1;
-                    }
-                    // remaining tail
-                    for r in ai..old_slice.len() {
+                let mut ai = 0usize;
+                let mut bi = 0usize;
+                for (omi, omj) in local_matches.iter() {
+                    // produce removed lines from ai..omi
+                    for r in ai..*omi {
                         out.push_str(&format!("-{}\n", old_slice[r]));
                     }
-                    for a in bi..new_slice.len() {
+                    // produce added lines from bi..omj
+                    for a in bi..*omj {
                         out.push_str(&format!("+{}\n", new_slice[a]));
                     }
-
-                    out.push_str("\n");
+                    // matched line as context
+                    out.push_str(&format!(" {}\n", old_slice[*omi]));
+                    ai = omi + 1;
+                    bi = omj + 1;
                 }
+                // remaining tail
+                for r in ai..old_slice.len() {
+                    out.push_str(&format!("-{}\n", old_slice[r]));
+                }
+                for a in bi..new_slice.len() {
+                    out.push_str(&format!("+{}\n", new_slice[a]));
+                }
+
+                out.push_str("\n");
             }
         }
     }
