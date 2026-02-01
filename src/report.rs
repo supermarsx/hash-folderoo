@@ -10,7 +10,10 @@ pub fn render_json_to_html(input_json: &Path, out_html: &Path) -> Result<()> {
     let json = fs::read_to_string(input_json)?;
 
     // Minimal HTML-escape for safety
-    let escaped = json.replace('&', "&").replace('<', "<").replace('>', ">");
+    let escaped = json
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
 
     let html = format!(
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Benchmark Report</title>\n<style>body {{ font-family: system-ui, -apple-system, Roboto, 'Segoe UI', Helvetica, Arial; padding: 1rem; }} pre {{ background:#f6f8fa; padding:1rem; border-radius:6px; overflow:auto; }}</style>\n</head>\n<body>\n<h1>Benchmark Report</h1>\n<pre>{}</pre>\n</body>\n</html>",

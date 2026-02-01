@@ -64,16 +64,16 @@ fn copydiff_dry_run_git_diff_shows_content_hunks() -> Result<(), Box<dyn std::er
         .success()
         // at minimum, we expect a git-style header and a content line for the differing file (+world or unchanged ' world')
         .stdout(
-            predicate::str::contains("diff --git").and(
-                predicate::str::contains("+world").or(predicate::str::contains(" world")),
-            ),
+            predicate::str::contains("diff --git")
+                .and(predicate::str::contains("+world").or(predicate::str::contains(" world"))),
         );
 
     Ok(())
 }
 
 #[test]
-fn renamer_dry_run_git_diff_shows_content_for_same_file() -> Result<(), Box<dyn std::error::Error>> {
+fn renamer_dry_run_git_diff_shows_content_for_same_file() -> Result<(), Box<dyn std::error::Error>>
+{
     let dir = tempdir()?;
     let root = dir.path().join("root");
     create_dir_all(&root)?;
@@ -92,9 +92,9 @@ fn renamer_dry_run_git_diff_shows_content_for_same_file() -> Result<(), Box<dyn 
         "--git-diff-body",
     ]);
 
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("rename from").and(predicate::str::contains("hello world")));
+    cmd.assert().success().stdout(
+        predicate::str::contains("rename from").and(predicate::str::contains("hello world")),
+    );
 
     Ok(())
 }

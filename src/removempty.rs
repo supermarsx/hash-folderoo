@@ -8,6 +8,7 @@ use std::path::Path;
 /// Remove empty directories in `path` using post-order traversal.
 /// `min_depth` controls the minimum depth at which directories may be removed.
 /// `excludes` is a list of glob patterns (relative to `path`) to skip removal.
+#[allow(clippy::too_many_arguments)]
 pub fn remove_empty_directories(
     path: &Path,
     dry_run: bool,
@@ -40,12 +41,13 @@ pub fn remove_empty_directories(
     let root = path.to_path_buf();
     let min_allowed = min_depth.unwrap_or(0);
 
+    #[allow(clippy::too_many_arguments, clippy::only_used_in_recursion)]
     fn helper(
         p: &Path,
         dry_run: bool,
         git_diff: bool,
-        git_diff_body: bool,
-        git_diff_context: usize,
+        _git_diff_body: bool,
+        _git_diff_context: usize,
         git_diff_output: Option<&Path>,
         root: &Path,
         depth: usize,
@@ -61,8 +63,8 @@ pub fn remove_empty_directories(
                     &pth,
                     dry_run,
                     git_diff,
-                    git_diff_body,
-                    git_diff_context,
+                    _git_diff_body,
+                    _git_diff_context,
                     git_diff_output,
                     root,
                     depth + 1,
@@ -94,7 +96,12 @@ pub fn remove_empty_directories(
                             .open(out_path)
                             .and_then(|mut f| f.write_all(diff.as_bytes()))
                         {
-                            let _ = writeln!(std::io::stderr(), "warning: failed writing diff to {}: {}", out_path.display(), e);
+                            let _ = writeln!(
+                                std::io::stderr(),
+                                "warning: failed writing diff to {}: {}",
+                                out_path.display(),
+                                e
+                            );
                         }
                     } else {
                         println!("{}", diff);
@@ -112,7 +119,12 @@ pub fn remove_empty_directories(
                             .open(out_path)
                             .and_then(|mut f| f.write_all(diff.as_bytes()))
                         {
-                            let _ = writeln!(std::io::stderr(), "warning: failed writing diff to {}: {}", out_path.display(), e);
+                            let _ = writeln!(
+                                std::io::stderr(),
+                                "warning: failed writing diff to {}: {}",
+                                out_path.display(),
+                                e
+                            );
                         }
                     } else {
                         println!("{}", diff);
@@ -132,7 +144,18 @@ pub fn remove_empty_directories(
     }
 
     // start recursion
-    helper(path, dry_run, git_diff, git_diff_body, git_diff_context, git_diff_output, &root, 0, min_allowed, &globset)?;
+    helper(
+        path,
+        dry_run,
+        git_diff,
+        git_diff_body,
+        git_diff_context,
+        git_diff_output,
+        &root,
+        0,
+        min_allowed,
+        &globset,
+    )?;
     Ok(())
 }
 
@@ -150,7 +173,17 @@ mod tests {
         create_dir_all(root.join("keep")).unwrap();
         create_dir_all(root.join("top_empty")).unwrap();
         File::create(root.join("keep").join("file.txt")).unwrap();
-        remove_empty_directories(&root, false, Some(2), &["keep/**".to_string()], false, false, 3, None).unwrap();
+        remove_empty_directories(
+            &root,
+            false,
+            Some(2),
+            &["keep/**".to_string()],
+            false,
+            false,
+            3,
+            None,
+        )
+        .unwrap();
         assert!(root.join("a").exists());
         assert!(!root.join("a").join("b").exists());
         assert!(root.join("keep").exists());

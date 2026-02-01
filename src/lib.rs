@@ -4,6 +4,7 @@ pub mod cli;
 pub mod compare;
 pub mod config;
 pub mod copy;
+pub mod diff;
 pub mod hash;
 pub mod io;
 pub mod memory;
@@ -12,7 +13,6 @@ pub mod removempty;
 pub mod renamer;
 pub mod report;
 pub mod utils;
-pub mod diff;
 pub mod walk;
 
 pub use config::RuntimeConfig;

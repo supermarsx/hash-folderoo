@@ -111,7 +111,9 @@ fn cli_smoke_suite() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("\"total_files\"").or(predicate::str::contains("Total files")));
+        .stdout(
+            predicate::str::contains("\"total_files\"").or(predicate::str::contains("Total files")),
+        );
 
     // 7) benchmark basic run (small buffer)
     Command::new(assert_cmd::cargo::cargo_bin!("hash-folderoo"))

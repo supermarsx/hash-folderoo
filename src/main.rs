@@ -584,7 +584,11 @@ fn main() -> anyhow::Result<()> {
                     preserve_times: args.preserve_times,
                 };
                 // when resuming we persist updates back to the plan file so progress is maintained
-                let persist_path = if args.resume { args.plan.as_deref() } else { None };
+                let persist_path = if args.resume {
+                    args.plan.as_deref()
+                } else {
+                    None
+                };
 
                 copy::execute_copy_plan(
                     &mut plan,
@@ -595,10 +599,16 @@ fn main() -> anyhow::Result<()> {
                     args.git_diff_context,
                     args.git_diff_output.as_deref(),
                 )
-                    .map_err(|e| anyhow::anyhow!(e))?;
+                .map_err(|e| anyhow::anyhow!(e))?;
             } else {
                 // default to dry-run output
-                copy::dry_run_copy_plan(&plan, args.git_diff, args.git_diff_body, args.git_diff_context, args.git_diff_output.as_deref());
+                copy::dry_run_copy_plan(
+                    &plan,
+                    args.git_diff,
+                    args.git_diff_body,
+                    args.git_diff_context,
+                    args.git_diff_output.as_deref(),
+                );
             }
         }
         Some(hash_folderoo::cli::Commands::Removempty(args)) => {
@@ -631,7 +641,7 @@ fn main() -> anyhow::Result<()> {
                 anyhow::bail!("either --map or --pattern is required for renamer");
             }
 
-            let map_path = args.map.as_deref().map(|p| p.as_ref());
+            let map_path = args.map.as_deref();
             let pattern = args.pattern.as_deref();
             let replace = args.replace.as_deref();
 

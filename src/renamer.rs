@@ -30,6 +30,7 @@ pub fn rename_files(path: &Path, pattern: &str, dry_run: bool) -> Result<()> {
 /// - `map` file (CSV or JSON) containing mapping pairs {src,dst} or two-column CSV
 /// - `regex` flag: treat pattern as a regex and apply `replace` substitution on filenames
 /// - `dry_run` and `git_diff` output options
+#[allow(clippy::too_many_arguments)]
 pub fn rename_files_with_options(
     path: &Path,
     pattern: Option<&str>,
@@ -221,7 +222,7 @@ pub fn rename_files_with_options(
             }
         }
 
-        match std::fs::rename(&s, &tmp) {
+        match std::fs::rename(s, &tmp) {
             Ok(_) => {
                 temps.push((s.clone(), tmp.clone(), d.clone()));
                 info!(

@@ -1,5 +1,4 @@
 use assert_cmd::prelude::*;
-use predicates::prelude::*;
 use std::fs::{create_dir_all, write};
 use std::process::Command;
 use tempfile::tempdir;

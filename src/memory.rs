@@ -90,10 +90,14 @@ impl BufferPool {
 
         // No buffer available in pool. If we haven't exceeded max_buffers, allocate
         // and account for it.
-        let mut alloc_now = false;
         let allocated = self.state.allocated.load(Ordering::SeqCst);
         if allocated < self.state.max_buffers {
-            alloc_now = true;
+            // Increment allocated count to reflect this allocation.
+            self.state.allocated.fetch_add(1, Ordering::SeqCst);
+            PooledBuffer {
+                buf: Some(vec![0u8; self.state.buf_size]),
+                pool: Some(self.state.clone()),
+            }
         } else {
             // Wait briefly for a buffer to become available
             for _ in 0..5 {
@@ -113,23 +117,12 @@ impl BufferPool {
                 "buffer pool exhausted (max_buffers={}), allocating beyond budget",
                 self.state.max_buffers
             );
-            alloc_now = true;
-        }
-
-        if alloc_now {
             // Increment allocated count to reflect this allocation.
             self.state.allocated.fetch_add(1, Ordering::SeqCst);
-            return PooledBuffer {
+            PooledBuffer {
                 buf: Some(vec![0u8; self.state.buf_size]),
                 pool: Some(self.state.clone()),
-            };
-        }
-
-        // fallback - should not reach here but allocate anyway
-        self.state.allocated.fetch_add(1, Ordering::SeqCst);
-        PooledBuffer {
-            buf: Some(vec![0u8; self.state.buf_size]),
-            pool: Some(self.state.clone()),
+            }
         }
     }
 

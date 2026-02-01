@@ -8,7 +8,7 @@ fn low_memory_scaling() {
     // Allow a generous slack for low-budget scenarios (recommend_config may
     // round buffer sizes up for internal constraints).
     assert!(
-        plan.total_buffer_bytes() <= 1 * 1024 * 1024,
+        plan.total_buffer_bytes() <= 1024 * 1024,
         "total buffer bytes {} exceeds budget",
         plan.total_buffer_bytes()
     );

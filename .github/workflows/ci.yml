@@ -7,6 +7,7 @@ on:
     branches: [main]
 
 jobs:
+  # Phase 1: Run checks in parallel
   format:
     name: Check formatting
     runs-on: ubuntu-latest
@@ -54,11 +55,26 @@ jobs:
           override: true
       - name: Run tests
         run: cargo test --all --verbose
-      - name: Run git-diff smoke tests (explicit)
-        run: cargo test --test cli_dry_git_diff -- --nocapture
 
+  type-check:
+    name: Type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: Run cargo check
+        run: |
+          cargo check --all-targets
+
+  # Phase 2: Smoke tests (depends on all checks passing)
   smoke:
     name: Smoke tests across OS matrix
+    needs: [format, lint, tests, type-check]
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -72,12 +88,15 @@ jobs:
           override: true
       - name: Run CLI smoke tests (git-diff + resume)
         run: |
-          set -e
           cargo test --test cli_dry_git_diff -- --nocapture
           cargo test --test cli_resume_plan -- --nocapture
+        shell: bash
 
+  # Phase 3: Build (depends on smoke tests passing)
+  # Phase 3: Build (depends on smoke tests passing)
   build:
     name: Cross build matrix
+    needs: [smoke]
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:

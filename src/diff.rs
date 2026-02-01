@@ -2,7 +2,6 @@ use std::path::Path;
 
 /// Simple helper to format git-style diffs for file operations.
 /// These are lightweight, primarily human-reviewable strings (not full patch metadata).
-
 fn read_lines_opt(p: &Path) -> Option<Vec<String>> {
     match std::fs::read_to_string(p) {
         Ok(s) => Some(s.lines().map(|l| l.to_string()).collect()),
@@ -10,6 +9,7 @@ fn read_lines_opt(p: &Path) -> Option<Vec<String>> {
     }
 }
 
+#[allow(clippy::needless_range_loop, clippy::single_char_add_str)]
 pub fn format_copy_diff(
     src: &Path,
     dst: &Path,
@@ -119,7 +119,13 @@ pub fn format_copy_diff(
                 let old_count = hb.saturating_sub(ha);
                 let new_count = kb.saturating_sub(ka);
                 if !(old_count == 0 && new_count == 0) {
-                    out.push_str(&format!("@@ -{},{} +{},{} @@\n", ha + 1, old_count, ka + 1, new_count));
+                    out.push_str(&format!(
+                        "@@ -{},{} +{},{} @@\n",
+                        ha + 1,
+                        old_count,
+                        ka + 1,
+                        new_count
+                    ));
                     let old_slice = &src_lines[ha..hb];
                     let new_slice = &dst_lines[ka..kb];
                     let local_matches = lcs_positions(old_slice, new_slice);
@@ -158,7 +164,13 @@ pub fn format_copy_diff(
                 if old_count == 0 && new_count == 0 {
                     // both empty - nothing to emit
                 } else {
-                    out.push_str(&format!("@@ -{},{} +{},{} @@\n", ha + 1, old_count, ka + 1, new_count));
+                    out.push_str(&format!(
+                        "@@ -{},{} +{},{} @@\n",
+                        ha + 1,
+                        old_count,
+                        ka + 1,
+                        new_count
+                    ));
                     let old_slice = &src_lines[ha..hb];
                     let new_slice = &dst_lines[ka..kb];
                     let local_matches = lcs_positions(old_slice, new_slice);
@@ -187,7 +199,13 @@ pub fn format_copy_diff(
                 for (ha, hb, ka, kb) in hunks.iter() {
                     let old_count = hb - ha;
                     let new_count = kb - ka;
-                    out.push_str(&format!("@@ -{},{} +{},{} @@\n", ha + 1, old_count, ka + 1, new_count));
+                    out.push_str(&format!(
+                        "@@ -{},{} +{},{} @@\n",
+                        ha + 1,
+                        old_count,
+                        ka + 1,
+                        new_count
+                    ));
 
                     // local slices
                     let old_slice = &src_lines[*ha..*hb];
@@ -228,6 +246,7 @@ pub fn format_copy_diff(
     out
 }
 
+#[allow(clippy::needless_range_loop, clippy::single_char_add_str)]
 pub fn format_rename_diff(src: &Path, dst: &Path, include_patch: bool, context: usize) -> String {
     let src_s = src.to_string_lossy();
     let dst_s = dst.to_string_lossy();
@@ -305,7 +324,13 @@ pub fn format_rename_diff(src: &Path, dst: &Path, include_patch: bool, context: 
             for (ha, hb, ka, kb) in hunks.iter() {
                 let old_count = hb - ha;
                 let new_count = kb - ka;
-                out.push_str(&format!("@@ -{},{} +{},{} @@\n", ha + 1, old_count, ka + 1, new_count));
+                out.push_str(&format!(
+                    "@@ -{},{} +{},{} @@\n",
+                    ha + 1,
+                    old_count,
+                    ka + 1,
+                    new_count
+                ));
                 let old_slice = &src_lines[*ha..*hb];
                 let new_slice = &dst_lines[*ka..*kb];
                 let local_matches = lcs_positions(old_slice, new_slice);

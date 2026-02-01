@@ -1,2 +1,8 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Exclude dev scripts, tests, and tooling from language statistics
+scripts/** linguist-vendored
+tests/** linguist-vendored
+*.ps1 linguist-vendored
+*.sh linguist-vendored

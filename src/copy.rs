@@ -258,7 +258,9 @@ pub fn execute_copy_plan(
         }
 
         // perform copy
-        if let Err(e) = fs::copy(src, &target_path).with_context(|| format!("copy {:?} -> {:?}", src, target_path)) {
+        if let Err(e) = fs::copy(src, &target_path)
+            .with_context(|| format!("copy {:?} -> {:?}", src, target_path))
+        {
             // store failed status and persist before returning
             plan.ops[i].status = Some(CopyStatus::Failed);
             if let Some(path) = persist_path {
@@ -268,7 +270,14 @@ pub fn execute_copy_plan(
         }
 
         if git_diff {
-            let diff = crate::diff::format_copy_diff(src, &target_path, !dst.exists(), None, include_patch, context);
+            let diff = crate::diff::format_copy_diff(
+                src,
+                &target_path,
+                !dst.exists(),
+                None,
+                include_patch,
+                context,
+            );
             if let Some(out_path) = git_diff_output {
                 // append to file
                 if let Err(e) = std::fs::OpenOptions::new()
@@ -277,7 +286,12 @@ pub fn execute_copy_plan(
                     .open(out_path)
                     .and_then(|mut f| f.write_all(diff.as_bytes()))
                 {
-                    let _ = writeln!(stdio::stderr(), "warning: failed writing diff to {}: {}", out_path.display(), e);
+                    let _ = writeln!(
+                        stdio::stderr(),
+                        "warning: failed writing diff to {}: {}",
+                        out_path.display(),
+                        e
+                    );
                 }
             } else {
                 println!("{}", diff);
@@ -323,7 +337,13 @@ pub fn execute_copy_plan(
 }
 
 /// Print what would be done for a given plan.
-pub fn dry_run_copy_plan(plan: &CopyPlan, git_diff: bool, include_patch: bool, context: usize, git_diff_output: Option<&Path>) {
+pub fn dry_run_copy_plan(
+    plan: &CopyPlan,
+    git_diff: bool,
+    include_patch: bool,
+    context: usize,
+    git_diff_output: Option<&Path>,
+) {
     if let Some(meta) = &plan.meta {
         println!("Plan generated at {}", meta.generated_at);
         if let Some(src) = &meta.source_root {
@@ -337,24 +357,30 @@ pub fn dry_run_copy_plan(plan: &CopyPlan, git_diff: bool, include_patch: bool, c
         println!("No copy operations to perform.");
         return;
     }
-            if git_diff {
-                for op in &plan.ops {
+    if git_diff {
+        for op in &plan.ops {
             let src = std::path::Path::new(&op.src);
             let dst = std::path::Path::new(&op.dst);
             let new_file = !dst.exists();
-                    let diff = crate::diff::format_copy_diff(src, dst, new_file, None, include_patch, context);
-                    if let Some(out_path) = git_diff_output {
-                        if let Err(e) = std::fs::OpenOptions::new()
-                            .create(true)
-                            .append(true)
-                            .open(out_path)
-                            .and_then(|mut f| f.write_all(diff.as_bytes()))
-                        {
-                            let _ = writeln!(stdio::stderr(), "warning: failed writing diff to {}: {}", out_path.display(), e);
-                        }
-                    } else {
-                        println!("{}", diff);
-                    }
+            let diff =
+                crate::diff::format_copy_diff(src, dst, new_file, None, include_patch, context);
+            if let Some(out_path) = git_diff_output {
+                if let Err(e) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(out_path)
+                    .and_then(|mut f| f.write_all(diff.as_bytes()))
+                {
+                    let _ = writeln!(
+                        stdio::stderr(),
+                        "warning: failed writing diff to {}: {}",
+                        out_path.display(),
+                        e
+                    );
+                }
+            } else {
+                println!("{}", diff);
+            }
         }
     } else {
         println!("Planned copy operations:");
