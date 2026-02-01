@@ -59,10 +59,7 @@ impl RuntimeConfig {
 
     pub fn merge(&mut self, other: RuntimeConfig) {
         if let Some(g) = other.general {
-            if self.general.is_none() {
-                self.general = Some(g);
-            } else {
-                let target = self.general.as_mut().unwrap();
+            if let Some(target) = self.general.as_mut() {
                 if g.path.is_some() {
                     target.path = g.path;
                 }
@@ -93,34 +90,34 @@ impl RuntimeConfig {
                 if g.dry_run.is_some() {
                     target.dry_run = g.dry_run;
                 }
+            } else {
+                self.general = Some(g);
             }
         }
 
         if let Some(a) = other.algorithm {
-            if self.algorithm.is_none() {
-                self.algorithm = Some(a);
-            } else {
-                let target = self.algorithm.as_mut().unwrap();
+            if let Some(target) = self.algorithm.as_mut() {
                 if a.name.is_some() {
                     target.name = a.name;
                 }
                 if a.xof_length.is_some() {
                     target.xof_length = a.xof_length;
                 }
+            } else {
+                self.algorithm = Some(a);
             }
         }
 
         if let Some(m) = other.memory {
-            if self.memory.is_none() {
-                self.memory = Some(m);
-            } else {
-                let target = self.memory.as_mut().unwrap();
+            if let Some(target) = self.memory.as_mut() {
                 if m.mode.is_some() {
                     target.mode = m.mode;
                 }
                 if m.max_ram.is_some() {
                     target.max_ram = m.max_ram;
                 }
+            } else {
+                self.memory = Some(m);
             }
         }
     }
