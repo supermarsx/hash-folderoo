@@ -107,4 +107,149 @@ mod tests {
         let _ = fs::remove_file(in_path);
         let _ = fs::remove_file(out_path);
     }
+
+    #[test]
+    fn html_escapes_dangerous_chars() {
+        let tmp = env::temp_dir();
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let in_path = tmp.join(format!("escape-{}.json", ts));
+        let out_path = tmp.join(format!("escape-{}.html", ts));
+
+        let sample = r#"{"algorithm":"<script>alert('xss')</script>","size_mb":1}"#;
+        fs::write(&in_path, sample).expect("write sample json");
+
+        render_json_to_html(&in_path, &out_path).expect("render html");
+
+        let html = fs::read_to_string(&out_path).expect("read html");
+        assert!(html.contains("&lt;script&gt;"));
+        assert!(html.contains("&lt;/script&gt;"));
+        assert!(!html.contains("<script>"));
+
+        let _ = fs::remove_file(in_path);
+        let _ = fs::remove_file(out_path);
+    }
+
+    #[test]
+    fn generate_report_json_enriches_with_total() {
+        let tmp = env::temp_dir();
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let in_path = tmp.join(format!("report-{}.json", ts));
+
+        let sample = r#"{"version":"1","entries":[{"path":"a.txt"},{"path":"b.txt"}]}"#;
+        fs::write(&in_path, sample).expect("write sample json");
+
+        // This would print to stdout; we can't easily capture it in a unit test
+        // but we can at least verify it doesn't panic
+        let result = generate_report(
+            in_path.to_str().unwrap(),
+            "json",
+            &vec![],
+            10,
+        );
+        assert!(result.is_ok());
+
+        let _ = fs::remove_file(in_path);
+    }
+
+    #[test]
+    fn generate_report_html_creates_file() {
+        let tmp = env::temp_dir();
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let in_path = tmp.join(format!("gen-{}.json", ts));
+        let out_path = tmp.join(format!("gen-{}.html", ts));
+
+        let sample = r#"{"algorithm":"blake3","size_mb":64}"#;
+        fs::write(&in_path, sample).expect("write sample json");
+
+        let result = generate_report(
+            in_path.to_str().unwrap(),
+            "html",
+            &vec![],
+            10,
+        );
+        assert!(result.is_ok());
+        assert!(out_path.exists());
+
+        let html = fs::read_to_string(&out_path).expect("read html");
+        assert!(html.contains("blake3"));
+        assert!(html.contains("<!doctype html>"));
+
+        let _ = fs::remove_file(in_path);
+        let _ = fs::remove_file(out_path);
+    }
+
+    #[test]
+    fn generate_report_nonexistent_file() {
+        let result = generate_report(
+            "/nonexistent/path/to/file.json",
+            "html",
+            &vec![],
+            10,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn render_empty_json() {
+        let tmp = env::temp_dir();
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let in_path = tmp.join(format!("empty-{}.json", ts));
+        let out_path = tmp.join(format!("empty-{}.html", ts));
+
+        fs::write(&in_path, "{}").expect("write empty json");
+
+        let result = render_json_to_html(&in_path, &out_path);
+        assert!(result.is_ok());
+        
+        let html = fs::read_to_string(&out_path).expect("read html");
+        assert!(html.contains("{}"));
+
+        let _ = fs::remove_file(in_path);
+        let _ = fs::remove_file(out_path);
+    }
+
+    #[test]
+    fn html_output_has_proper_structure() {
+        let tmp = env::temp_dir();
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let in_path = tmp.join(format!("struct-{}.json", ts));
+        let out_path = tmp.join(format!("struct-{}.html", ts));
+
+        let sample = r#"{"test":"data"}"#;
+        fs::write(&in_path, sample).expect("write sample json");
+
+        render_json_to_html(&in_path, &out_path).expect("render html");
+
+        let html = fs::read_to_string(&out_path).expect("read html");
+        assert!(html.contains("<!doctype html>"));
+        assert!(html.contains("<html lang=\"en\">"));
+        assert!(html.contains("<head>"));
+        assert!(html.contains("<meta charset=\"utf-8\">"));
+        assert!(html.contains("<title>Benchmark Report</title>"));
+        assert!(html.contains("<style>"));
+        assert!(html.contains("<body>"));
+        assert!(html.contains("<h1>Benchmark Report</h1>"));
+        assert!(html.contains("<pre>"));
+        assert!(html.contains("</pre>"));
+        assert!(html.contains("</body>"));
+        assert!(html.contains("</html>"));
+
+        let _ = fs::remove_file(in_path);
+        let _ = fs::remove_file(out_path);
+    }
 }

@@ -383,4 +383,177 @@ mod tests {
             assert_eq!(out.len(), 32, "algorithm {:?}", alg);
         }
     }
+
+    #[test]
+    fn all_algorithms_handle_empty_input() {
+        let inp = b"";
+        for alg in Algorithm::all() {
+            let mut h = alg.create();
+            h.update_reader(&mut &inp[..]).unwrap();
+            let out = h.finalize_hex(32);
+            assert_eq!(out.len(), 64, "algorithm {:?} should handle empty input", alg);
+            // Empty input should produce deterministic hash
+            let mut h2 = alg.create();
+            h2.update_reader(&mut &inp[..]).unwrap();
+            let out2 = h2.finalize_hex(32);
+            assert_eq!(out, out2, "algorithm {:?} should be deterministic", alg);
+        }
+    }
+
+    #[test]
+    fn all_algorithms_handle_large_output() {
+        let inp = b"test data for large output";
+        for alg in Algorithm::all() {
+            let mut h = alg.create();
+            h.update_reader(&mut &inp[..]).unwrap();
+            // Request 256 bytes = 512 hex chars
+            let out = h.finalize_hex(256);
+            assert_eq!(out.len(), 512, "algorithm {:?} should produce 256 bytes", alg);
+        }
+    }
+
+    #[test]
+    fn algorithms_produce_different_hashes() {
+        let inp = b"consistent test input";
+        let mut hashes = std::collections::HashMap::new();
+        
+        for alg in Algorithm::all() {
+            let mut h = alg.create();
+            h.update_reader(&mut &inp[..]).unwrap();
+            let out = h.finalize_hex(32);
+            
+            // Check no collision with other algorithms (very unlikely but possible)
+            if let Some(other_alg) = hashes.insert(out.clone(), alg.name()) {
+                // If there's a collision, at least log it (shouldn't happen in practice)
+                println!("Note: {} and {} produced same hash (rare but possible)", other_alg, alg.name());
+            }
+        }
+        
+        // We should have hashes from all algorithms
+        assert!(hashes.len() >= Algorithm::all().len() - 1, "Most algorithms should produce unique hashes");
+    }
+
+    #[test]
+    fn algorithm_info_is_consistent() {
+        for alg in Algorithm::all() {
+            let h = alg.create();
+            let info = h.info();
+            
+            // Name should match
+            assert_eq!(info.name, alg.name());
+            
+            // Output length should be reasonable
+            assert!(info.output_len_default > 0, "{} has zero default output", alg.name());
+            assert!(info.output_len_default <= 128, "{} default output too large", alg.name());
+            
+            // XOF metadata should match registry
+            assert_eq!(info.supports_xof, alg.is_xof(), "{} XOF metadata mismatch", alg.name());
+        }
+    }
+
+    #[test]
+    fn streaming_vs_single_update() {
+        let data = b"The quick brown fox jumps over the lazy dog";
+        
+        for alg in Algorithm::all() {
+            // Skip WyHash-1024 as it uses stream-dependent expansion
+            if alg.name() == "wyhash-1024" {
+                continue;
+            }
+            
+            // Single update
+            let mut h1 = alg.create();
+            h1.update(data);
+            let hash1 = h1.finalize_hex(64);
+            
+            // Streaming updates (split into chunks)
+            let mut h2 = alg.create();
+            h2.update(&data[0..10]);
+            h2.update(&data[10..20]);
+            h2.update(&data[20..]);
+            let hash2 = h2.finalize_hex(64);
+            
+            assert_eq!(hash1, hash2, "{} should produce same hash regardless of update pattern", alg.name());
+        }
+    }
+
+    #[test]
+    fn zero_length_output_request() {
+        let inp = b"test";
+        for alg in Algorithm::all() {
+            let mut h = alg.create();
+            h.update(inp);
+            let out = h.finalize_hex(0);
+            assert_eq!(out.len(), 0, "{} should handle zero-length output", alg.name());
+        }
+    }
+
+    #[test]
+    fn small_output_requests() {
+        let inp = b"test";
+        for alg in Algorithm::all() {
+            let mut h = alg.create();
+            h.update(inp);
+            
+            // Request 1 byte = 2 hex chars
+            let out = h.finalize_hex(1);
+            assert_eq!(out.len(), 2, "{} should produce 1 byte output", alg.name());
+        }
+    }
+
+    #[test]
+    fn cryptographic_flags_are_set() {
+        // Verify cryptographic algorithms are marked correctly
+        let crypto_algs = ["blake2b", "blake2bp", "blake3", "shake256", "k12", "turboshake256", "parallelhash256"];
+        let non_crypto = ["xxh3-1024", "wyhash-1024"];
+        
+        for alg in Algorithm::all() {
+            let h = alg.create();
+            let info = h.info();
+            
+            if crypto_algs.contains(&info.name.as_str()) {
+                assert!(info.is_cryptographic, "{} should be marked cryptographic", info.name);
+            } else if non_crypto.contains(&info.name.as_str()) {
+                assert!(!info.is_cryptographic, "{} should NOT be marked cryptographic", info.name);
+            }
+        }
+    }
+
+    #[test]
+    fn xof_algorithms_handle_variable_lengths() {
+        let inp = b"xof test";
+        let lengths = [16, 32, 64, 128, 256];
+        
+        for alg in Algorithm::all() {
+            if !alg.is_xof() {
+                continue;
+            }
+            
+            for &len in &lengths {
+                let mut h = alg.create();
+                h.update(inp);
+                let out = h.finalize_hex(len);
+                assert_eq!(out.len(), len * 2, "{} XOF should produce {} bytes", alg.name(), len);
+            }
+        }
+    }
+
+    #[test]
+    fn algorithm_from_name_roundtrip() {
+        for alg in Algorithm::all() {
+            let name = alg.name();
+            let parsed = Algorithm::from_name(name);
+            assert!(parsed.is_some(), "Algorithm {} should parse from its own name", name);
+            let parsed_alg = parsed.unwrap();
+            assert_eq!(parsed_alg.name(), name, "Roundtrip name mismatch");
+        }
+    }
+
+    #[test]
+    fn algorithm_name_case_insensitive() {
+        assert!(Algorithm::from_name("BLAKE3").is_some());
+        assert!(Algorithm::from_name("Blake3").is_some());
+        assert!(Algorithm::from_name("blake3").is_some());
+        assert!(Algorithm::from_name("SHAKE256").is_some());
+    }
 }

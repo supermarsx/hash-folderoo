@@ -80,10 +80,32 @@ jobs:
           cargo test --test cli_resume_plan -- --nocapture
         shell: bash
 
+  expand-vectors:
+    name: Expand vectors validation
+    needs: [format, lint, tests, type-check]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Run expand vectors test
+        run: cargo test --test expand_vectors -- --nocapture
+
+  bench-smoke:
+    name: Benchmark smoke tests
+    needs: [format, lint, tests, type-check]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Run benchmark smoke tests
+        run: cargo test --lib bench::tests -- --nocapture
+
   # Phase 3: Build (depends on smoke tests passing)
   build:
     name: Cross build matrix
-    needs: [smoke]
+    needs: [smoke, expand-vectors, bench-smoke]
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
