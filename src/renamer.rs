@@ -471,9 +471,9 @@ mod tests {
         create_dir_all(&root).unwrap();
         write(root.join("file.txt"), b"content").unwrap();
 
-        // Map to a subdirectory that doesn't exist
+        // Map to a subdirectory that doesn't exist - use explicit 2-column CSV
         let map_file = dir.path().join("map.csv");
-        std::fs::write(&map_file, "file.txt,subdir/renamed.txt\n").unwrap();
+        std::fs::write(&map_file, "src,dst\nfile.txt,subdir/renamed.txt\n").unwrap();
 
         let res = rename_files_with_options(
             &root,
@@ -487,7 +487,7 @@ mod tests {
             3,
             None,
         );
-        assert!(res.is_ok());
+        assert!(res.is_ok(), "rename operation should succeed");
 
         // Original file should be gone
         assert!(!root.join("file.txt").exists(), "Original file should be moved");
