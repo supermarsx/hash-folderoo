@@ -9,6 +9,9 @@ pub mod turboshake;
 pub mod wyhash;
 pub mod xxh3;
 
+#[cfg(test)]
+mod tests;
+
 pub use blake2b::Blake2bHasher;
 pub use blake2bp::Blake2bpHasher;
 pub use blake3::Blake3Hasher;

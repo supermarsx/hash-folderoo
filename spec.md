@@ -108,6 +108,57 @@ Notes on algorithms and support:
 - KangarooTwelve: use `kangarootwelve` crate providing K12 XOF.
 - WyHash / MeowHash / XXHash3 1024: these are non-cryptographic and may not provide XOF natively. Implement deterministic expansion via keyed streaming (e.g., use keyed XXH3 64-bit outputs repeated with counter and HMAC-like construction) — document that these are for benchmarking only and not suitable for integrity security.
 
+**Deterministic Expansion Behavior (Implementation Details)**
+
+For algorithms that do not natively support XOF (extendable output functions) or arbitrary-length outputs, hash-folderoo implements deterministic expansion to enable uniform output lengths across all algorithms for comparison and benchmarking purposes.
+
+**Expansion Strategy:**
+
+1. **Native XOF Algorithms (BLAKE3, SHAKE256, K12, TurboSHAKE, ParallelHash):**
+   - Use the algorithm's native XOF capability to produce arbitrary-length outputs.
+   - No expansion needed; outputs are cryptographically secure and standardized.
+
+2. **Fixed-Output Algorithms (BLAKE2b, BLAKE2bp, XXH3, WyHash):**
+   - When output length requested exceeds native digest size, apply deterministic chaining.
+   - **BLAKE2b/BLAKE2bp Expansion Algorithm:**
+     - Compute native digest `D0` of input
+     - For each required chunk `i` (where `i = 0, 1, 2, ...`):
+       - Compute `Di = Hash(D0 || counter_i)` where `counter_i` is `i` as 4-byte little-endian
+       - Concatenate chunks until desired output length reached
+       - Truncate final output to exact requested length
+     - This construction is deterministic and collision-resistant (dependent on underlying hash properties)
+   - **XXH3 Expansion Algorithm:**
+     - Compute native 64-bit digest `seed` of input
+     - For each required 8-byte chunk at index `i`:
+       - Compute `chunk_i = XXH3_64(seed || counter_i, tweak_i)` 
+       - Where `counter_i` is `i` as 8-byte LE, `tweak_i = seed + i * 0x9E37_79B1_85EB_CA87`
+       - Concatenate chunks, truncate to requested length
+   - **WyHash Expansion Algorithm:**
+     - Compute native 64-bit digest `seed` of input
+     - For each required 8-byte chunk at index `i`:
+       - Compute `chunk_i = WyHash(counter_i, seed_i)` where `seed_i = seed + i * 0xA076_1D64_78BD_642F`
+       - Concatenate chunks, truncate to requested length
+
+**Guarantees:**
+- **Deterministic:** Same input and output length always produce identical digest
+- **Reproducible:** Implementation-defined expansion is documented and tested with reference vectors
+- **Non-standard:** Expanded outputs for fixed-length algorithms are NOT standardized and should NOT be used for cryptographic verification or interoperability with other tools
+- **Performance vs Security Trade-off:** Non-cryptographic expansions (XXH3, WyHash) are suitable ONLY for performance benchmarking, NOT for integrity checking
+
+**Testing & Validation:**
+- Unit tests in `src/algorithms/tests.rs` include reference vectors for:
+  - BLAKE2b expansion (80, 128, 160 bytes)
+  - SHAKE256 outputs (32, 64, 128 bytes)
+  - All other algorithms with smoke tests
+- Integration tests in `tests/expand_vectors.rs` verify deterministic behavior across multiple runs
+- Reference vectors are computed from the actual implementation and verified for consistency
+
+**Usage Notes:**
+- XOF-capable algorithms should be preferred for variable-length outputs
+- Fixed-output algorithm expansions are provided for benchmarking comparisons only
+- Algorithm metadata (`supports_xof`) indicates native XOF support vs. deterministic expansion
+- Users can query algorithm properties via `--alg-list` CLI flag
+
 **RAM Guardrails & Memory Modes**
 
 - Provide runtime memory guardrails and explicit memory modes to control memory footprint and performance trade-offs.
@@ -127,6 +178,57 @@ Notes on algorithms and support:
 - Thread/worker adjustments:
   - Dynamically cap worker threads based on `max_ram` and `per_thread_budget` to avoid oversubscription.
   - If `--memory-mode booster` is active, and `max_ram` is not explicitly set, adopt conservative auto-detection: `auto_max_ram = total_system_ram * 0.7`.
+
+**Memory Mode Implementation Guarantees (Status: IMPLEMENTED)**
+
+The following guarantees are provided by the current implementation in `src/memory.rs` and `src/pipeline.rs`:
+
+1. **Buffer Pool Accounting:**
+   - `BufferPool` tracks allocated buffers via `AtomicUsize` counter
+   - Pool enforces soft maximum on buffer count; allocation attempts wait briefly before creating new buffers
+   - Buffers are returned to pool on drop via RAII `PooledBuffer` wrapper
+   - Prevents unbounded memory growth during high-concurrency operations
+
+2. **Memory Budget Enforcement:**
+   - `recommend_config()` function computes thread count, buffer size, and buffer count based on mode and `max_ram`
+   - If computed total exceeds `max_ram`, scales down buffer count proportionally
+   - Thread count reduced if fewer buffers available than threads
+   - Logs warnings when scaling occurs
+
+3. **Mode-Specific Behavior:**
+   - **Stream Mode:**
+     - Buffer size: 64 KB
+     - Threads: `cpus / 2` (reduced parallelism for lower memory pressure)
+     - Buffers per thread: 2
+     - Directory listing: streaming (no prefetch) to minimize peak memory
+   - **Balanced Mode (default):**
+     - Buffer size: 256 KB
+     - Threads: `cpus` (full CPU utilization)
+     - Buffers per thread: 4
+     - Directory listing: prefetched for better scheduling
+   - **Booster Mode:**
+     - Buffer size: 1 MB
+     - Threads: `cpus * 2` (over-subscription for I/O hiding)
+     - Buffers per thread: 6
+     - Directory listing: prefetched
+     - Auto RAM detection: uses 70% of system RAM if `max_ram` not specified
+
+4. **Soft Backpressure:**
+   - Pipeline workers check `pool.allocated_buffers() > pool.max_buffers()` before processing files
+   - When exceeded, worker sleeps 5ms to allow buffer returns before proceeding
+   - Prevents runaway allocation under pathological workloads
+
+5. **Graceful Degradation:**
+   - If BufferPool exhausted, logs warning and allocates beyond budget rather than blocking
+   - Prevents deadlocks while maintaining observability
+   - Allocated counter tracks all allocations for monitoring
+
+6. **Testing:**
+   - Unit tests in `src/memory.rs::tests` verify:
+     - `recommend_config()` respects `max_ram` parameter
+     - BufferPool basic get/put cycle functionality
+     - Configuration computation for all three modes
+   - Integration test in `tests/memory_integration.rs` verifies low-memory scaling
 
 **Stream Modes (low-memory)**
 

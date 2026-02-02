@@ -4,7 +4,7 @@ use crate::algorithms::{
 };
 use crate::hash::HasherImpl;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Algorithm {
     Blake2b,
     Blake2bp,
