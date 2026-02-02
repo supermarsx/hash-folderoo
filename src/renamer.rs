@@ -396,4 +396,174 @@ mod tests {
         assert!(root.join("a.txt").exists());
         assert!(!root.join("b.txt").exists());
     }
+
+    #[test]
+    fn transactional_rename_success() {
+        // Test successful transactional rename (non-dry-run)
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("root");
+        create_dir_all(&root).unwrap();
+        write(root.join("old_file1.txt"), b"content1").unwrap();
+        write(root.join("old_file2.txt"), b"content2").unwrap();
+
+        // Use pattern format "old->new" for non-regex string replacement
+        let res = rename_files_with_options(
+            &root,
+            Some("old_->new_"),
+            None,
+            None,
+            false, // simple string replacement
+            false, // NOT dry-run
+            false,
+            false,
+            3,
+            None,
+        );
+        assert!(res.is_ok());
+
+        // Files should be renamed
+        assert!(!root.join("old_file1.txt").exists(), "old_file1.txt should be gone");
+        assert!(!root.join("old_file2.txt").exists(), "old_file2.txt should be gone");
+        assert!(root.join("new_file1.txt").exists(), "new_file1.txt should exist");
+        assert!(root.join("new_file2.txt").exists(), "new_file2.txt should exist");
+        
+        // Content should be preserved
+        assert_eq!(std::fs::read_to_string(root.join("new_file1.txt")).unwrap(), "content1");
+        assert_eq!(std::fs::read_to_string(root.join("new_file2.txt")).unwrap(), "content2");
+    }
+
+    #[test]
+    fn transactional_rename_skips_existing() {
+        // Test that renamer skips files where target already exists
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("root");
+        create_dir_all(&root).unwrap();
+        write(root.join("file1.txt"), b"original").unwrap();
+        write(root.join("fileX.txt"), b"existing").unwrap();
+
+        let res = rename_files_with_options(
+            &root,
+            Some("file(\\d)"),
+            Some("fileX"),
+            None,
+            true,
+            false, // NOT dry-run
+            false,
+            false,
+            3,
+            None,
+        );
+        assert!(res.is_ok());
+
+        // file1.txt should remain because fileX.txt already exists
+        assert!(root.join("file1.txt").exists());
+        assert!(root.join("fileX.txt").exists());
+        
+        // Existing file should be untouched
+        assert_eq!(std::fs::read_to_string(root.join("fileX.txt")).unwrap(), "existing");
+    }
+
+    #[test]
+    fn transactional_rename_creates_subdirs() {
+        // Test that renamer creates necessary subdirectories
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("root");
+        create_dir_all(&root).unwrap();
+        write(root.join("file.txt"), b"content").unwrap();
+
+        // Map to a subdirectory that doesn't exist
+        let map_file = dir.path().join("map.csv");
+        std::fs::write(&map_file, "file.txt,subdir/renamed.txt\n").unwrap();
+
+        let res = rename_files_with_options(
+            &root,
+            None,
+            None,
+            Some(&map_file),
+            false,
+            false, // NOT dry-run
+            false,
+            false,
+            3,
+            None,
+        );
+        assert!(res.is_ok());
+
+        // Original file should be gone
+        assert!(!root.join("file.txt").exists(), "Original file should be moved");
+        // Subdirectory should exist
+        assert!(root.join("subdir").exists(), "Subdirectory should be created");
+        // File should be in new location
+        assert!(root.join("subdir").join("renamed.txt").exists(), "File should be in subdirectory");
+        // Content should be preserved
+        assert_eq!(
+            std::fs::read_to_string(root.join("subdir").join("renamed.txt")).unwrap(),
+            "content"
+        );
+    }
+
+    #[test]
+    fn transactional_rename_with_json_map() {
+        // Test JSON mapping file support
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("root");
+        create_dir_all(&root).unwrap();
+        write(root.join("a.txt"), b"a").unwrap();
+        write(root.join("b.txt"), b"b").unwrap();
+
+        let map_file = dir.path().join("map.json");
+        let json_content = r#"[
+            {"src": "a.txt", "dst": "alpha.txt"},
+            {"src": "b.txt", "dst": "beta.txt"}
+        ]"#;
+        std::fs::write(&map_file, json_content).unwrap();
+
+        let res = rename_files_with_options(
+            &root,
+            None,
+            None,
+            Some(&map_file),
+            false,
+            false, // NOT dry-run
+            false,
+            false,
+            3,
+            None,
+        );
+        assert!(res.is_ok());
+
+        assert!(!root.join("a.txt").exists());
+        assert!(!root.join("b.txt").exists());
+        assert!(root.join("alpha.txt").exists());
+        assert!(root.join("beta.txt").exists());
+    }
+
+    #[test]
+    fn regex_pattern_replacement() {
+        // Test regex pattern matching and replacement
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("root");
+        create_dir_all(&root).unwrap();
+        write(root.join("photo_001.jpg"), b"1").unwrap();
+        write(root.join("photo_002.jpg"), b"2").unwrap();
+
+        let res = rename_files_with_options(
+            &root,
+            Some("photo_(\\d+)"),
+            Some("image_$1"),
+            None,
+            true, // regex mode
+            false, // NOT dry-run
+            false,
+            false,
+            3,
+            None,
+        );
+        assert!(res.is_ok());
+
+        assert!(!root.join("photo_001.jpg").exists());
+        assert!(!root.join("photo_002.jpg").exists());
+        assert!(root.join("image_001.jpg").exists());
+        assert!(root.join("image_002.jpg").exists());
+    }
 }
