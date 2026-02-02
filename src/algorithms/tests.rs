@@ -3,7 +3,6 @@ use crate::algorithms::{
     Shake256Hasher, TurboShake256Hasher, WyHashExpander, Xxh3Expander,
 };
 use crate::hash::{expand_digest, HasherImpl};
-use std::hash::Hasher;
 use std::io::Read;
 
 #[cfg(test)]
@@ -18,7 +17,6 @@ mod tests {
     use tiny_keccak::{Hasher as TKHasher, KangarooTwelve};
     use tiny_keccak::{IntoXof, ParallelHash, Xof};
     use turboshake::TurboShake256;
-    use wyhash::WyHash;
     use xxhash_rust::xxh3::{xxh3_64_with_seed, Xxh3};
 
     #[test]
@@ -246,25 +244,6 @@ mod tests {
             let expected = expand_seed(seed, 128);
             assert_eq!(got, hex::encode(expected), "xxh3 mismatch for {:?}", inp);
         }
-    }
-
-    fn wyhash_expand(seed: u64, out_len: usize) -> Vec<u8> {
-        if out_len == 0 {
-            return Vec::new();
-        }
-        let mut out = Vec::with_capacity(out_len);
-        let mut counter = 0u64;
-        let mut current_seed = seed;
-        while out.len() < out_len {
-            let mut hasher = WyHash::with_seed(current_seed);
-            hasher.write(&counter.to_le_bytes());
-            let chunk = hasher.finish();
-            out.extend_from_slice(&chunk.to_le_bytes());
-            counter = counter.wrapping_add(1);
-            current_seed = current_seed.wrapping_add(0xA076_1D64_78BD_642F);
-        }
-        out.truncate(out_len);
-        out
     }
 
     #[test]
