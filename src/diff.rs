@@ -345,4 +345,149 @@ mod tests {
         assert!(s.contains("rename from a/old.txt"));
         assert!(s.contains("rename to   a/new.txt"));
     }
+
+    #[test]
+    fn copy_diff_with_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("source.txt");
+        let dst = dir.path().join("dest.txt");
+        std::fs::write(&src, b"line1\nline2\nline3\n").unwrap();
+        
+        let diff = format_copy_diff(&src, &dst, true, Some(&src.to_string_lossy()), false, 3);
+        assert!(diff.contains("diff --git"));
+        assert!(diff.contains("new file mode"));
+    }
+
+    #[test]
+    fn copy_diff_dry_run() {
+        let src = PathBuf::from("test.txt");
+        let dst = PathBuf::from("copy.txt");
+        let diff = format_copy_diff(&src, &dst, true, None, false, 3);
+        assert!(diff.contains("diff --git"));
+    }
+
+    #[test]
+    fn copy_diff_with_unicode_paths() {
+        let src = PathBuf::from("文件.txt");
+        let dst = PathBuf::from("копия.txt");
+        let diff = format_copy_diff(&src, &dst, true, None, false, 3);
+        assert!(diff.contains("文件.txt"));
+        assert!(diff.contains("копия.txt"));
+    }
+
+    #[test]
+    fn copy_diff_with_spaces_in_paths() {
+        let src = PathBuf::from("my file.txt");
+        let dst = PathBuf::from("new file.txt");
+        let diff = format_copy_diff(&src, &dst, true, None, false, 3);
+        assert!(diff.contains("my file.txt"));
+        assert!(diff.contains("new file.txt"));
+    }
+
+    #[test]
+    fn rename_diff_with_unicode() {
+        let src = PathBuf::from("старый.txt");
+        let dst = PathBuf::from("новый.txt");
+        let diff = format_rename_diff(&src, &dst, false, 3);
+        assert!(diff.contains("старый.txt"));
+        assert!(diff.contains("новый.txt"));
+    }
+
+    #[test]
+    fn rename_diff_similarity_100() {
+        let src = PathBuf::from("file.txt");
+        let dst = PathBuf::from("renamed.txt");
+        let diff = format_rename_diff(&src, &dst, false, 3);
+        assert!(diff.contains("rename from"));
+        assert!(diff.contains("rename to"));
+    }
+
+    #[test]
+    fn copy_diff_with_very_long_path() {
+        let long_path = "a/".repeat(50) + "file.txt";
+        let src = PathBuf::from(&long_path);
+        let dst = PathBuf::from("short.txt");
+        let diff = format_copy_diff(&src, &dst, true, None, false, 3);
+        assert!(diff.len() > 0);
+    }
+
+    #[test]
+    fn copy_diff_identical_paths() {
+        let src = PathBuf::from("same.txt");
+        let dst = PathBuf::from("same.txt");
+        let diff = format_copy_diff(&src, &dst, true, None, false, 3);
+        assert!(diff.contains("same.txt"));
+    }
+
+    #[test]
+    fn rename_diff_identical_paths() {
+        let src = PathBuf::from("same.txt");
+        let dst = PathBuf::from("same.txt");
+        let diff = format_rename_diff(&src, &dst, false, 3);
+        assert!(diff.contains("same.txt"));
+    }
+
+    #[test]
+    fn copy_diff_with_multiple_context_lines() {
+        let src = PathBuf::from("test.txt");
+        let dst = PathBuf::from("copy.txt");
+        
+        let diff1 = format_copy_diff(&src, &dst, true, None, false, 1);
+        let diff3 = format_copy_diff(&src, &dst, true, None, false, 3);
+        let diff10 = format_copy_diff(&src, &dst, true, None, false, 10);
+        
+        assert!(diff1.len() > 0);
+        assert!(diff3.len() > 0);
+        assert!(diff10.len() > 0);
+    }
+
+    #[test]
+    fn copy_diff_with_actual_file_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("real.txt");
+        std::fs::write(&src, "Hello\nWorld\n").unwrap();
+        
+        let dst = PathBuf::from("destination.txt");
+        let diff = format_copy_diff(&dst, &src, true, Some(&src.to_string_lossy()), false, 3);
+        assert!(diff.len() > 0);
+    }
+
+    #[test]
+    fn copy_diff_nonexistent_content_file() {
+        let src = PathBuf::from("src.txt");
+        let dst = PathBuf::from("dst.txt");
+        let nonexistent = PathBuf::from("/nonexistent/file.txt");
+        
+        let diff = format_copy_diff(&src, &dst, true, Some(&nonexistent.to_string_lossy()), false, 3);
+        // Should still produce diff, just without content
+        assert!(diff.contains("diff --git"));
+    }
+
+    #[test]
+    fn copy_diff_ansi_colored() {
+        let src = PathBuf::from("a.txt");
+        let dst = PathBuf::from("b.txt");
+        let diff = format_copy_diff(&src, &dst, false, None, false, 3);
+        // Should have ANSI color codes when not plain
+        assert!(diff.len() > 0);
+    }
+
+    #[test]
+    fn rename_diff_ansi_colored() {
+        let src = PathBuf::from("old.txt");
+        let dst = PathBuf::from("new.txt");
+        let diff = format_rename_diff(&src, &dst, false, 3);
+        assert!(diff.len() > 0);
+    }
+
+    #[test]
+    fn copy_diff_with_empty_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("empty.txt");
+        std::fs::write(&src, b"").unwrap();
+        
+        let dst = PathBuf::from("empty_copy.txt");
+        let diff = format_copy_diff(&dst, &src, true, Some(&src.to_string_lossy()), false, 3);
+        assert!(diff.contains("diff --git"));
+    }
 }

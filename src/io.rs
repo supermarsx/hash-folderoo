@@ -159,4 +159,237 @@ mod tests {
         let loaded = load_map_from_csv(&p).unwrap();
         assert_eq!(loaded, v);
     }
+
+    #[test]
+    fn json_handles_empty_array() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("empty.json");
+        let v: Vec<MapEntry> = vec![];
+        write_json(&p, &v).unwrap();
+        let loaded = load_map_from_json(&p).unwrap();
+        assert_eq!(loaded.len(), 0);
+    }
+
+    #[test]
+    fn csv_handles_empty_array() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("empty.csv");
+        let v: Vec<MapEntry> = vec![];
+        write_csv(&p, &v).unwrap();
+        let loaded = load_map_from_csv(&p).unwrap();
+        assert_eq!(loaded.len(), 0);
+    }
+
+    #[test]
+    fn json_handles_special_characters() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("special.json");
+        let v = vec![MapEntry {
+            path: "file with spaces & \"quotes\" and 'apostrophes'.txt".into(),
+            hash: "abc123".into(),
+            size: 100,
+            mtime: Some(1234567890),
+        }];
+        write_json(&p, &v).unwrap();
+        let loaded = load_map_from_json(&p).unwrap();
+        assert_eq!(loaded, v);
+    }
+
+    #[test]
+    fn csv_handles_special_characters() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("special.csv");
+        let v = vec![MapEntry {
+            path: "file,with,commas.txt".into(),
+            hash: "hash\"with\"quotes".into(),
+            size: 999,
+            mtime: Some(9999999),
+        }];
+        write_csv(&p, &v).unwrap();
+        let loaded = load_map_from_csv(&p).unwrap();
+        assert_eq!(loaded, v);
+    }
+
+    #[test]
+    fn json_handles_unicode() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("unicode.json");
+        let v = vec![MapEntry {
+            path: "文件名.txt".into(),
+            hash: "🔥hash🔥".into(),
+            size: 42,
+            mtime: None,
+        }];
+        write_json(&p, &v).unwrap();
+        let loaded = load_map_from_json(&p).unwrap();
+        assert_eq!(loaded, v);
+    }
+
+    #[test]
+    fn csv_handles_unicode() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("unicode.csv");
+        let v = vec![MapEntry {
+            path: "файл.txt".into(),
+            hash: "хеш".into(),
+            size: 777,
+            mtime: Some(1000),
+        }];
+        write_csv(&p, &v).unwrap();
+        let loaded = load_map_from_csv(&p).unwrap();
+        assert_eq!(loaded, v);
+    }
+
+    #[test]
+    fn json_handles_large_dataset() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("large.json");
+        let v: Vec<MapEntry> = (0..1000)
+            .map(|i| MapEntry {
+                path: format!("file_{}.txt", i),
+                hash: format!("hash_{}", i),
+                size: i as u64,
+                mtime: Some(i as i64),
+            })
+            .collect();
+        write_json(&p, &v).unwrap();
+        let loaded = load_map_from_json(&p).unwrap();
+        assert_eq!(loaded.len(), 1000);
+        assert_eq!(loaded[0].path, "file_0.txt");
+        assert_eq!(loaded[999].path, "file_999.txt");
+    }
+
+    #[test]
+    fn csv_handles_large_dataset() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("large.csv");
+        let v: Vec<MapEntry> = (0..1000)
+            .map(|i| MapEntry {
+                path: format!("file_{}.txt", i),
+                hash: format!("hash_{}", i),
+                size: i as u64,
+                mtime: Some(i as i64),
+            })
+            .collect();
+        write_csv(&p, &v).unwrap();
+        let loaded = load_map_from_csv(&p).unwrap();
+        assert_eq!(loaded.len(), 1000);
+    }
+
+    #[test]
+    fn json_with_none_mtime() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("no_mtime.json");
+        let v = vec![MapEntry {
+            path: "test.txt".into(),
+            hash: "hash123".into(),
+            size: 100,
+            mtime: None,
+        }];
+        write_json(&p, &v).unwrap();
+        let loaded = load_map_from_json(&p).unwrap();
+        assert_eq!(loaded[0].mtime, None);
+    }
+
+    #[test]
+    fn csv_with_none_mtime() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("no_mtime.csv");
+        let v = vec![MapEntry {
+            path: "test.txt".into(),
+            hash: "hash123".into(),
+            size: 100,
+            mtime: None,
+        }];
+        write_csv(&p, &v).unwrap();
+        let loaded = load_map_from_csv(&p).unwrap();
+        assert_eq!(loaded[0].mtime, None);
+    }
+
+    #[test]
+    fn json_handles_very_long_paths() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("long_paths.json");
+        let long_path = "a/".repeat(100) + "file.txt";
+        let v = vec![MapEntry {
+            path: long_path.clone(),
+            hash: "hash".into(),
+            size: 1,
+            mtime: None,
+        }];
+        write_json(&p, &v).unwrap();
+        let loaded = load_map_from_json(&p).unwrap();
+        assert_eq!(loaded[0].path, long_path);
+    }
+
+    #[test]
+    fn json_handles_very_long_hashes() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("long_hash.json");
+        let long_hash = "a".repeat(10000);
+        let v = vec![MapEntry {
+            path: "file.txt".into(),
+            hash: long_hash.clone(),
+            size: 1,
+            mtime: None,
+        }];
+        write_json(&p, &v).unwrap();
+        let loaded = load_map_from_json(&p).unwrap();
+        assert_eq!(loaded[0].hash, long_hash);
+    }
+
+    #[test]
+    fn json_handles_zero_size() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("zero_size.json");
+        let v = vec![MapEntry {
+            path: "empty.txt".into(),
+            hash: "empty_hash".into(),
+            size: 0,
+            mtime: None,
+        }];
+        write_json(&p, &v).unwrap();
+        let loaded = load_map_from_json(&p).unwrap();
+        assert_eq!(loaded[0].size, 0);
+    }
+
+    #[test]
+    fn json_handles_max_u64_size() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("max_size.json");
+        let v = vec![MapEntry {
+            path: "huge.txt".into(),
+            hash: "hash".into(),
+            size: u64::MAX,
+            mtime: None,
+        }];
+        write_json(&p, &v).unwrap();
+        let loaded = load_map_from_json(&p).unwrap();
+        assert_eq!(loaded[0].size, u64::MAX);
+    }
+
+    #[test]
+    fn load_nonexistent_json_fails() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("nonexistent.json");
+        let result = load_map_from_json(&p);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn load_nonexistent_csv_fails() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("nonexistent.csv");
+        let result = load_map_from_csv(&p);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn load_malformed_json_fails() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("malformed.json");
+        std::fs::write(&p, b"{ this is not valid json }").unwrap();
+        let result = load_map_from_json(&p);
+        assert!(result.is_err());
+    }
 }

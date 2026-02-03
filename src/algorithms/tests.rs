@@ -556,4 +556,233 @@ mod tests {
         assert!(Algorithm::from_name("blake3").is_some());
         assert!(Algorithm::from_name("SHAKE256").is_some());
     }
+
+    #[test]
+    fn algorithm_handles_power_of_two_boundaries() {
+        // Test at various power-of-2 boundaries (buffer alignment)
+        let sizes = vec![64, 128, 256, 512, 1024, 2048, 4096, 8192];
+        let data: Vec<u8> = (0..8192).map(|i| (i % 256) as u8).collect();
+        
+        for size in sizes {
+            for alg in Algorithm::all() {
+                let mut h = alg.create();
+                h.update(&data[0..size]);
+                let hash = h.finalize_hex(32);
+                assert_eq!(hash.len(), 64, "{} should produce 64 hex chars for 32 bytes", alg.name());
+            }
+        }
+    }
+
+    #[test]
+    fn algorithm_handles_very_large_single_update() {
+        // 10 MB input
+        let data: Vec<u8> = (0..10_000_000).map(|i| (i % 251) as u8).collect();
+        
+        for alg in Algorithm::all() {
+            let mut h = alg.create();
+            h.update(&data);
+            let hash = h.finalize_hex(32);
+            assert_eq!(hash.len(), 64);
+            // Verify determinism
+            let mut h2 = alg.create();
+            h2.update(&data);
+            let hash2 = h2.finalize_hex(32);
+            assert_eq!(hash, hash2, "{} should be deterministic for large input", alg.name());
+        }
+    }
+
+    #[test]
+    fn algorithm_handles_many_small_updates() {
+        // Stress test with 10,000 tiny updates
+        let chunk = b"x";
+        
+        for alg in Algorithm::all() {
+            if alg.name() == "wyhash-1024" {
+                continue; // Skip stream-dependent
+            }
+            
+            let mut h = alg.create();
+            for _ in 0..10_000 {
+                h.update(chunk);
+            }
+            let hash1 = h.finalize_hex(32);
+            
+            // Compare with single large update
+            let data = vec![b'x'; 10_000];
+            let mut h2 = alg.create();
+            h2.update(&data);
+            let hash2 = h2.finalize_hex(32);
+            
+            assert_eq!(hash1, hash2, "{} should handle many small updates", alg.name());
+        }
+    }
+
+    #[test]
+    fn algorithm_handles_single_byte_updates() {
+        let data = b"abcdefghijklmnop";
+        
+        for alg in Algorithm::all() {
+            if alg.name() == "wyhash-1024" {
+                continue;
+            }
+            
+            let mut h1 = alg.create();
+            for &byte in data {
+                h1.update(&[byte]);
+            }
+            let hash1 = h1.finalize_hex(32);
+            
+            let mut h2 = alg.create();
+            h2.update(data);
+            let hash2 = h2.finalize_hex(32);
+            
+            assert_eq!(hash1, hash2, "{} should handle single byte updates", alg.name());
+        }
+    }
+
+    #[test]
+    fn algorithm_finalize_can_be_called_multiple_times() {
+        let data = b"test data";
+        
+        for alg in Algorithm::all() {
+            let mut h = alg.create();
+            h.update(data);
+            let hash1 = h.finalize_hex(32);
+            let hash2 = h.finalize_hex(32);
+            let hash3 = h.finalize_hex(64);
+            
+            // First two should be identical
+            assert_eq!(hash1, hash2, "{} finalize should be idempotent", alg.name());
+            // Third should be longer
+            assert_eq!(hash3.len(), 128);
+        }
+    }
+
+    #[test]
+    fn algorithm_empty_update_is_noop() {
+        let data = b"test";
+        
+        for alg in Algorithm::all() {
+            let mut h1 = alg.create();
+            h1.update(data);
+            let hash1 = h1.finalize_hex(32);
+            
+            let mut h2 = alg.create();
+            h2.update(data);
+            h2.update(&[]); // Empty update
+            h2.update(&[]); // Another empty update
+            let hash2 = h2.finalize_hex(32);
+            
+            assert_eq!(hash1, hash2, "{} empty updates should be no-ops", alg.name());
+        }
+    }
+
+    #[test]
+    fn algorithm_odd_output_lengths() {
+        // Test non-power-of-2 output lengths
+        let odd_lengths = vec![1, 3, 5, 7, 11, 13, 17, 31, 63, 127];
+        let data = b"test data for odd lengths";
+        
+        for alg in Algorithm::all() {
+            for &len in &odd_lengths {
+                let mut h = alg.create();
+                h.update(data);
+                let hash = h.finalize_hex(len);
+                assert_eq!(hash.len(), len * 2, "{} should produce {} hex chars", alg.name(), len * 2);
+            }
+        }
+    }
+
+    #[test]
+    fn algorithm_maximum_practical_output() {
+        // Test very large output (1 MB)
+        let data = b"test";
+        let output_size = 1024 * 1024; // 1 MB
+        
+        for alg in Algorithm::all() {
+            let mut h = alg.create();
+            h.update(data);
+            let hash = h.finalize_hex(output_size);
+            assert_eq!(hash.len(), output_size * 2);
+            // Check it's valid hex
+            assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
+        }
+    }
+
+    #[test]
+    fn algorithm_different_data_produces_different_hash() {
+        // Avalanche test: single bit flip should change hash significantly
+        let data1 = b"test data for avalanche";
+        let mut data2 = data1.to_vec();
+        data2[0] ^= 0x01; // Flip one bit
+        
+        for alg in Algorithm::all() {
+            let mut h1 = alg.create();
+            h1.update(data1);
+            let hash1 = h1.finalize_hex(32);
+            
+            let mut h2 = alg.create();
+            h2.update(&data2);
+            let hash2 = h2.finalize_hex(32);
+            
+            assert_ne!(hash1, hash2, "{} should produce different hashes for different inputs", alg.name());
+            
+            // Count different characters (should be ~50% for good hash)
+            let diff_count = hash1.chars().zip(hash2.chars()).filter(|(a, b)| a != b).count();
+            assert!(diff_count > 10, "{} should have good avalanche (got {} diffs)", alg.name(), diff_count);
+        }
+    }
+
+    #[test]
+    fn algorithm_info_consistency_across_instances() {
+        // Info should be consistent across multiple instances
+        for alg in Algorithm::all() {
+            let h1 = alg.create();
+            let h2 = alg.create();
+            let h3 = alg.create();
+            
+            let info1 = h1.info();
+            let info2 = h2.info();
+            let info3 = h3.info();
+            
+            assert_eq!(info1.name, info2.name);
+            assert_eq!(info2.name, info3.name);
+            assert_eq!(info1.supports_xof, info2.supports_xof);
+            assert_eq!(info2.supports_xof, info3.supports_xof);
+            assert_eq!(info1.is_cryptographic, info2.is_cryptographic);
+            assert_eq!(info2.is_cryptographic, info3.is_cryptographic);
+        }
+    }
+
+    #[test]
+    fn algorithm_unicode_data() {
+        let unicode_data = "Hello 世界 🌍 Здравствуй мир";
+        let bytes = unicode_data.as_bytes();
+        
+        for alg in Algorithm::all() {
+            let mut h = alg.create();
+            h.update(bytes);
+            let hash = h.finalize_hex(32);
+            assert_eq!(hash.len(), 64);
+            
+            // Verify determinism
+            let mut h2 = alg.create();
+            h2.update(bytes);
+            let hash2 = h2.finalize_hex(32);
+            assert_eq!(hash, hash2);
+        }
+    }
+
+    #[test]
+    fn algorithm_all_bytes_coverage() {
+        // Test with data containing all possible byte values
+        let data: Vec<u8> = (0..=255).collect();
+        
+        for alg in Algorithm::all() {
+            let mut h = alg.create();
+            h.update(&data);
+            let hash = h.finalize_hex(32);
+            assert_eq!(hash.len(), 64);
+        }
+    }
 }

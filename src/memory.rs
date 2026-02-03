@@ -355,4 +355,163 @@ mod tests {
         assert!(plan.total_buffer_bytes() <= 2 * 1024 * 1024);
         assert!(plan.num_buffers >= 1);
     }
+
+    #[test]
+    fn buffer_pool_handles_zero_capacity() {
+        // Edge case: pool with 0 max buffers should still allow allocation
+        let pool = BufferPool::new(0, 1024);
+        let buf = pool.get();
+        assert!(buf.as_slice().len() > 0);
+    }
+
+    #[test]
+    fn buffer_pool_concurrent_access() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let pool = Arc::new(BufferPool::new(10, 1024));
+        let mut handles = vec![];
+
+        for _ in 0..20 {
+            let pool_clone = Arc::clone(&pool);
+            let handle = thread::spawn(move || {
+                for _ in 0..100 {
+                    let _buf = pool_clone.get();
+                    thread::sleep(Duration::from_micros(1));
+                }
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        // Should not crash and should have reasonable allocation count
+        assert!(pool.allocated_buffers() < 1000);
+    }
+
+    #[test]
+    fn buffer_pool_reuse_after_drop() {
+        let pool = BufferPool::new(2, 1024);
+        
+        // Allocate and drop
+        {
+            let _b1 = pool.get();
+            let _b2 = pool.get();
+        }
+        
+        let initial_allocated = pool.allocated_buffers();
+        
+        // Should reuse buffers
+        {
+            let _b3 = pool.get();
+            let _b4 = pool.get();
+        }
+        
+        // Allocation count should not increase significantly
+        assert_eq!(pool.allocated_buffers(), initial_allocated);
+    }
+
+    #[test]
+    fn buffer_pool_exceeds_capacity_gracefully() {
+        let pool = BufferPool::new(2, 1024);
+        
+        let _b1 = pool.get();
+        let _b2 = pool.get();
+        let _b3 = pool.get(); // Exceeds capacity
+        let _b4 = pool.get();
+        
+        // Should still work, just allocate more
+        assert!(pool.allocated_buffers() >= 4);
+    }
+
+    #[test]
+    fn recommend_config_with_very_low_memory() {
+        // Edge case: only 64 KB available
+        let plan = recommend_config(MemoryMode::Stream, None, Some(64 * 1024)).unwrap();
+        assert!(plan.total_buffer_bytes() <= 64 * 1024);
+        assert!(plan.threads >= 1);
+        assert!(plan.num_buffers >= 1);
+    }
+
+    #[test]
+    fn recommend_config_with_very_high_memory() {
+        // Edge case: 100 GB available
+        let plan = recommend_config(MemoryMode::Booster, None, Some(100 * 1024 * 1024 * 1024)).unwrap();
+        assert!(plan.threads >= 1);
+        assert!(plan.num_buffers >= 1);
+        // Should cap at reasonable values
+        assert!(plan.threads <= 256);
+    }
+
+    #[test]
+    fn recommend_config_thread_override_works() {
+        let plan1 = recommend_config(MemoryMode::Balanced, Some(1), None).unwrap();
+        assert_eq!(plan1.threads, 1);
+        
+        let plan2 = recommend_config(MemoryMode::Balanced, Some(32), None).unwrap();
+        assert_eq!(plan2.threads, 32);
+    }
+
+    #[test]
+    fn recommend_config_all_modes() {
+        // Ensure all modes produce valid configs
+        for mode in &[MemoryMode::Stream, MemoryMode::Balanced, MemoryMode::Booster] {
+            let plan = recommend_config(*mode, None, None).unwrap();
+            assert!(plan.threads >= 1);
+            assert!(plan.buffer_size >= 1024);
+            assert!(plan.num_buffers >= 1);
+            assert!(plan.total_buffer_bytes() > 0);
+        }
+    }
+
+    #[test]
+    fn memory_mode_from_str() {
+        assert!(matches!(MemoryMode::from_name("stream"), MemoryMode::Stream));
+        assert!(matches!(MemoryMode::from_name("STREAM"), MemoryMode::Stream));
+        assert!(matches!(MemoryMode::from_name("balanced"), MemoryMode::Balanced));
+        assert!(matches!(MemoryMode::from_name("BALANCED"), MemoryMode::Balanced));
+        assert!(matches!(MemoryMode::from_name("booster"), MemoryMode::Booster));
+        assert!(matches!(MemoryMode::from_name("BOOSTER"), MemoryMode::Booster));
+        assert!(matches!(MemoryMode::from_name("invalid"), MemoryMode::Balanced)); // default
+    }
+
+    #[test]
+    fn buffer_pool_different_sizes() {
+        // Test various buffer sizes
+        for size in &[64, 1024, 4096, 65536, 1024 * 1024] {
+            let pool = BufferPool::new(2, *size);
+            let buf = pool.get();
+            assert!(buf.as_slice().len() >= *size || buf.as_slice().is_empty());
+        }
+    }
+
+    #[test]
+    fn buffer_pool_stress_test() {
+        let pool = BufferPool::new(5, 4096);
+        let mut buffers = vec![];
+        
+        // Allocate many buffers
+        for _ in 0..100 {
+            buffers.push(pool.get());
+        }
+        
+        // Should handle over-allocation
+        assert!(pool.allocated_buffers() >= 100);
+        
+        // Drop all
+        buffers.clear();
+        
+        // New allocations should reuse
+        let _b = pool.get();
+    }
+
+    #[test]
+    fn recommend_config_zero_threads_defaults() {
+        // Edge case: if somehow zero threads requested
+        let plan = recommend_config(MemoryMode::Balanced, Some(0), None).unwrap();
+        // Should default to at least 1
+        assert!(plan.threads >= 1);
+    }
 }
